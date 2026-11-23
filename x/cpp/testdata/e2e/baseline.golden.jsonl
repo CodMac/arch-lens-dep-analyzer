@@ -37,6 +37,8 @@
 {"QN":"Bits","Kind":"STRUCT","IsSource":true}
 {"QN":"Bits::count","Kind":"FIELD","IsSource":true}
 {"QN":"Bits::flag","Kind":"FIELD","IsSource":true}
+{"QN":"Blob","Kind":"STRUCT","IsSource":true}
+{"QN":"Blob::v","Kind":"FIELD","IsSource":true}
 {"QN":"Box","Kind":"STRUCT","IsSource":true}
 {"QN":"Box::int_value","Kind":"FIELD","IsSource":true}
 {"QN":"Box::ptr_value","Kind":"FIELD","IsSource":true}
@@ -69,6 +71,7 @@
 {"QN":"CondStruct","Kind":"STRUCT","IsSource":true}
 {"QN":"CondStruct::cv","Kind":"FIELD","IsSource":true}
 {"QN":"DECL_DEF_H","Kind":"MACRO","IsSource":true}
+{"QN":"DEMO_GUARD_H","Kind":"MACRO","IsSource":true}
 {"QN":"DISPLAY_OUTOFLINE_H","Kind":"MACRO","IsSource":true}
 {"QN":"DISP_FUNC_MACRO","Kind":"MACRO","IsSource":true}
 {"QN":"DISP_MACRO","Kind":"MACRO","IsSource":true}
@@ -110,6 +113,9 @@
 {"QN":"FEATURE_VALUE","Kind":"MACRO","IsSource":true}
 {"QN":"FEATURE_VALUE$2","Kind":"MACRO","IsSource":true}
 {"QN":"FUNC_MACRO","Kind":"MACRO","IsSource":true}
+{"QN":"FUNC_SCOPED_MACRO","Kind":"MACRO","IsSource":true}
+{"QN":"Fallback","Kind":"CLASS","IsSource":true}
+{"QN":"Fallback::Fallback()","Kind":"METHOD_DECL","IsSource":true}
 {"QN":"FinalClass","Kind":"CLASS","IsSource":true}
 {"QN":"FinalClass::fv","Kind":"FIELD","IsSource":true}
 {"QN":"FinalDerived","Kind":"STRUCT","IsSource":true}
@@ -135,6 +141,9 @@
 {"QN":"GlobalCls::method(int)","Kind":"METHOD","IsSource":true}
 {"QN":"GlobalCls::method(int)","Kind":"METHOD_DECL","IsSource":true}
 {"QN":"GlobalCls::method(int)::x","Kind":"VARIABLE","IsSource":true}
+{"QN":"Guarded","Kind":"CLASS","IsSource":true}
+{"QN":"Guarded::Guarded()","Kind":"METHOD_DECL","IsSource":true}
+{"QN":"HAVE_AFUNIX","Kind":"MACRO","IsSource":true}
 {"QN":"HEADER_MACRO","Kind":"MACRO","IsSource":true}
 {"QN":"Holder","Kind":"STRUCT","IsSource":true}
 {"QN":"Holder::fn_field","Kind":"FIELD","IsSource":true}
@@ -171,6 +180,7 @@
 {"QN":"Map::val","Kind":"FIELD","IsSource":true}
 {"QN":"Multi","Kind":"STRUCT","IsSource":true}
 {"QN":"Multi::m","Kind":"FIELD","IsSource":true}
+{"QN":"NS_MACRO","Kind":"MACRO","IsSource":true}
 {"QN":"Named","Kind":"STRUCT","IsSource":true}
 {"QN":"Named::n","Kind":"FIELD","IsSource":true}
 {"QN":"NamedAlias","Kind":"TYPE","IsSource":true}
@@ -667,6 +677,10 @@
 {"QN":"collector/cpp/base/cpp_base_dep.h","Kind":"FILE","IsSource":true}
 {"QN":"collector/cpp/class/cls.cpp","Kind":"FILE","IsSource":true}
 {"QN":"collector/cpp/cond/cnd.cpp","Kind":"FILE","IsSource":true}
+{"QN":"collector/cpp/cond/dead.cpp","Kind":"FILE","IsSource":true}
+{"QN":"collector/cpp/cond/dead_span.cpp","Kind":"FILE","IsSource":true}
+{"QN":"collector/cpp/cond/dup.cpp","Kind":"FILE","IsSource":true}
+{"QN":"collector/cpp/cond/nested.cpp","Kind":"FILE","IsSource":true}
 {"QN":"collector/cpp/ctor_dtor/ctor.cpp","Kind":"FILE","IsSource":true}
 {"QN":"collector/cpp/decl_def/decl_def.cpp","Kind":"FILE","IsSource":true}
 {"QN":"collector/cpp/decl_def/decl_def.h","Kind":"FILE","IsSource":true}
@@ -686,6 +700,7 @@
 {"QN":"collector/cpp/namespace/ns.cpp","Kind":"FILE","IsSource":true}
 {"QN":"collector/cpp/operator/op.cpp","Kind":"FILE","IsSource":true}
 {"QN":"collector/cpp/param/prm.cpp","Kind":"FILE","IsSource":true}
+{"QN":"collector/cpp/param/signature.cpp","Kind":"FILE","IsSource":true}
 {"QN":"collector/cpp/scope/scp.cpp","Kind":"FILE","IsSource":true}
 {"QN":"collector/cpp/template/tpl.cpp","Kind":"FILE","IsSource":true}
 {"QN":"collector/cpp/typedef_using/td.cpp","Kind":"FILE","IsSource":true}
@@ -709,7 +724,7 @@
 {"QN":"cond_outer_only","Kind":"VARIABLE","IsSource":true}
 {"QN":"constrained_func(T)","Kind":"FUNCTION","IsSource":true}
 {"QN":"constrained_func(T)::v","Kind":"VARIABLE","IsSource":true}
-{"QN":"count_args(Ts... args)","Kind":"FUNCTION","IsSource":true}
+{"QN":"count_args(Ts...)","Kind":"FUNCTION","IsSource":true}
 {"QN":"counter","Kind":"VARIABLE","IsSource":true}
 {"QN":"cst","Kind":"NAMESPACE","IsSource":true}
 {"QN":"cst::CastA","Kind":"STRUCT","IsSource":true}
@@ -733,8 +748,31 @@
 {"QN":"current_scoped","Kind":"VARIABLE","IsSource":true}
 {"QN":"cx(int)","Kind":"FUNCTION","IsSource":true}
 {"QN":"cx(int)::v","Kind":"VARIABLE","IsSource":true}
+{"QN":"deadspan","Kind":"NAMESPACE","IsSource":true}
+{"QN":"deadspan::after()","Kind":"FUNCTION","IsSource":true}
+{"QN":"deadspan::before()","Kind":"FUNCTION","IsSource":true}
+{"QN":"deadspan::chain()","Kind":"FUNCTION","IsSource":true}
+{"QN":"deadzone","Kind":"NAMESPACE","IsSource":true}
+{"QN":"deadzone::live()","Kind":"FUNCTION","IsSource":true}
 {"QN":"declared_only(int)","Kind":"FUNCTION_DECL","IsSource":true}
 {"QN":"declared_only(int)::a","Kind":"VARIABLE","IsSource":true}
+{"QN":"demo","Kind":"NAMESPACE","IsSource":true}
+{"QN":"demo::Conn","Kind":"CLASS","IsSource":true}
+{"QN":"demo::Conn::Conn(Conn\u0026\u0026)","Kind":"METHOD","IsSource":true}
+{"QN":"demo::Conn::Conn(Conn\u0026\u0026)::other","Kind":"VARIABLE","IsSource":true}
+{"QN":"demo::Conn::sock","Kind":"FIELD","IsSource":true}
+{"QN":"demo::Socket","Kind":"CLASS","IsSource":true}
+{"QN":"demo::Socket::Socket()","Kind":"METHOD_DECL","IsSource":true}
+{"QN":"demo::live_function()","Kind":"FUNCTION","IsSource":true}
+{"QN":"demo::nested_var","Kind":"VARIABLE","IsSource":true}
+{"QN":"demo::other_var","Kind":"VARIABLE","IsSource":true}
+{"QN":"demo::outer_only","Kind":"VARIABLE","IsSource":true}
+{"QN":"demo::read_socket(socket_t,void*,size_t,int)","Kind":"FUNCTION","IsSource":true}
+{"QN":"demo::read_socket(socket_t,void*,size_t,int)::flags","Kind":"VARIABLE","IsSource":true}
+{"QN":"demo::read_socket(socket_t,void*,size_t,int)::lambda$1","Kind":"LAMBDA","IsSource":true}
+{"QN":"demo::read_socket(socket_t,void*,size_t,int)::ptr","Kind":"VARIABLE","IsSource":true}
+{"QN":"demo::read_socket(socket_t,void*,size_t,int)::size","Kind":"VARIABLE","IsSource":true}
+{"QN":"demo::read_socket(socket_t,void*,size_t,int)::sock","Kind":"VARIABLE","IsSource":true}
 {"QN":"dup_blocks()","Kind":"FUNCTION","IsSource":true}
 {"QN":"dup_blocks()::block$1","Kind":"SCOPE_BLOCK","IsSource":true}
 {"QN":"dup_blocks()::block$1::dup","Kind":"VARIABLE","IsSource":true}
@@ -747,8 +785,17 @@
 {"QN":"dup_fn(int,int)::b","Kind":"VARIABLE","IsSource":true}
 {"QN":"dup_ns","Kind":"NAMESPACE","IsSource":true}
 {"QN":"dup_ns::dup_var","Kind":"VARIABLE","IsSource":true}
+{"QN":"dup_sig$2(int,int)","Kind":"FUNCTION","IsSource":true}
+{"QN":"dup_sig$2(int,int)::a","Kind":"VARIABLE","IsSource":true}
+{"QN":"dup_sig$2(int,int)::b","Kind":"VARIABLE","IsSource":true}
+{"QN":"dup_sig(int,int)","Kind":"FUNCTION","IsSource":true}
+{"QN":"dup_sig(int,int)::a","Kind":"VARIABLE","IsSource":true}
+{"QN":"dup_sig(int,int)::b","Kind":"VARIABLE","IsSource":true}
 {"QN":"dup_var","Kind":"VARIABLE","IsSource":true}
 {"QN":"dup_var2","Kind":"VARIABLE","IsSource":true}
+{"QN":"dupzone","Kind":"NAMESPACE","IsSource":true}
+{"QN":"dupzone::g()","Kind":"FUNCTION","IsSource":true}
+{"QN":"dupzone::g()::x","Kind":"VARIABLE","IsSource":true}
 {"QN":"empty_fn()","Kind":"FUNCTION","IsSource":true}
 {"QN":"empty_parens()","Kind":"FUNCTION","IsSource":true}
 {"QN":"ext","Kind":"NAMESPACE","IsSource":true}
@@ -1010,6 +1057,8 @@
 {"QN":"local_proto(int)","Kind":"FUNCTION","IsSource":true}
 {"QN":"local_proto(int)","Kind":"FUNCTION_DECL","IsSource":true}
 {"QN":"local_proto(int)::a","Kind":"VARIABLE","IsSource":true}
+{"QN":"macro_in_func()","Kind":"FUNCTION","IsSource":true}
+{"QN":"macro_ns","Kind":"NAMESPACE","IsSource":true}
 {"QN":"makeL1(Holder*)","Kind":"FUNCTION","IsSource":true}
 {"QN":"makeL1(Holder*)::h","Kind":"VARIABLE","IsSource":true}
 {"QN":"make_adder(int)","Kind":"FUNCTION","IsSource":true}
@@ -1054,6 +1103,13 @@
 {"QN":"named(int,char*)","Kind":"FUNCTION","IsSource":true}
 {"QN":"named(int,char*)::a","Kind":"VARIABLE","IsSource":true}
 {"QN":"named(int,char*)::p","Kind":"VARIABLE","IsSource":true}
+{"QN":"nested","Kind":"NAMESPACE","IsSource":true}
+{"QN":"nested::f_1_1()","Kind":"FUNCTION","IsSource":true}
+{"QN":"nested::f_1_2()","Kind":"FUNCTION","IsSource":true}
+{"QN":"nested::f_2_1()","Kind":"FUNCTION","IsSource":true}
+{"QN":"nested::f_2_2()","Kind":"FUNCTION","IsSource":true}
+{"QN":"nested_tpl(std::map)","Kind":"FUNCTION","IsSource":true}
+{"QN":"nested_tpl(std::map)::m","Kind":"VARIABLE","IsSource":true}
 {"QN":"never_defined(int)","Kind":"FUNCTION_DECL","IsSource":true}
 {"QN":"never_defined(int)::a","Kind":"VARIABLE","IsSource":true}
 {"QN":"never_defined(int)::x","Kind":"VARIABLE","IsSource":true}
@@ -1187,6 +1243,13 @@
 {"QN":"overloaded(int,int)","Kind":"FUNCTION","IsSource":true}
 {"QN":"overloaded(int,int)::a","Kind":"VARIABLE","IsSource":true}
 {"QN":"overloaded(int,int)::b","Kind":"VARIABLE","IsSource":true}
+{"QN":"preproc/guard.h","Kind":"FILE","IsSource":true}
+{"QN":"preproc/has_include.cpp","Kind":"FILE","IsSource":true}
+{"QN":"preproc/if_zero.cpp","Kind":"FILE","IsSource":true}
+{"QN":"preproc/macro_class.h","Kind":"FILE","IsSource":true}
+{"QN":"preproc/member_init.cpp","Kind":"FILE","IsSource":true}
+{"QN":"preproc/nested.cpp","Kind":"FILE","IsSource":true}
+{"QN":"preproc/split_args.cpp","Kind":"FILE","IsSource":true}
 {"QN":"process()","Kind":"FUNCTION","IsSource":true}
 {"QN":"process()::c","Kind":"VARIABLE","IsSource":true}
 {"QN":"process()::n","Kind":"VARIABLE","IsSource":true}
@@ -1290,6 +1353,10 @@
 {"QN":"signal_like(int,void (*))","Kind":"FUNCTION_DECL","IsSource":true}
 {"QN":"signal_like(int,void (*))::handler","Kind":"VARIABLE","IsSource":true}
 {"QN":"signal_like(int,void (*))::sig","Kind":"VARIABLE","IsSource":true}
+{"QN":"spacing(const char*,unsigned int,const Blob\u0026)","Kind":"FUNCTION","IsSource":true}
+{"QN":"spacing(const char*,unsigned int,const Blob\u0026)::b","Kind":"VARIABLE","IsSource":true}
+{"QN":"spacing(const char*,unsigned int,const Blob\u0026)::n","Kind":"VARIABLE","IsSource":true}
+{"QN":"spacing(const char*,unsigned int,const Blob\u0026)::s","Kind":"VARIABLE","IsSource":true}
 {"QN":"st","Kind":"NAMESPACE","IsSource":true}
 {"QN":"st::Base","Kind":"STRUCT","IsSource":true}
 {"QN":"st::Base::~Base()","Kind":"METHOD","IsSource":true}
@@ -1332,6 +1399,13 @@
 {"QN":"static_fn()","Kind":"FUNCTION","IsSource":true}
 {"QN":"static_helper(int)","Kind":"FUNCTION","IsSource":true}
 {"QN":"static_helper(int)::v","Kind":"VARIABLE","IsSource":true}
+{"QN":"testing","Kind":"NAMESPACE","IsSource":true}
+{"QN":"testing::ConstCharPtr","Kind":"STRUCT","IsSource":true}
+{"QN":"testing::ConstCharPtr::p","Kind":"FIELD","IsSource":true}
+{"QN":"testing::Test","Kind":"CLASS","IsSource":true}
+{"QN":"testing::Test::Test()","Kind":"METHOD_DECL","IsSource":true}
+{"QN":"testing::Test::run(int)","Kind":"METHOD_DECL","IsSource":true}
+{"QN":"testing::Test::run(int)::x","Kind":"VARIABLE","IsSource":true}
 {"QN":"thr","Kind":"NAMESPACE","IsSource":true}
 {"QN":"thr::ErrA","Kind":"STRUCT","IsSource":true}
 {"QN":"thr::ErrA::code","Kind":"FIELD","IsSource":true}
@@ -1343,6 +1417,13 @@
 {"QN":"thr::thrower(int)::block$2","Kind":"SCOPE_BLOCK","IsSource":true}
 {"QN":"thr::thrower(int)::e","Kind":"VARIABLE","IsSource":true}
 {"QN":"thr::thrower(int)::mode","Kind":"VARIABLE","IsSource":true}
+{"QN":"tpl_array(Blob[],Blob*[])","Kind":"FUNCTION","IsSource":true}
+{"QN":"tpl_array(Blob[],Blob*[])::arr","Kind":"VARIABLE","IsSource":true}
+{"QN":"tpl_array(Blob[],Blob*[])::ptrs","Kind":"VARIABLE","IsSource":true}
+{"QN":"tpl_param(const Blob\u0026,Blob*,Blob\u0026\u0026)","Kind":"FUNCTION","IsSource":true}
+{"QN":"tpl_param(const Blob\u0026,Blob*,Blob\u0026\u0026)::b","Kind":"VARIABLE","IsSource":true}
+{"QN":"tpl_param(const Blob\u0026,Blob*,Blob\u0026\u0026)::pb","Kind":"VARIABLE","IsSource":true}
+{"QN":"tpl_param(const Blob\u0026,Blob*,Blob\u0026\u0026)::rb","Kind":"VARIABLE","IsSource":true}
 {"QN":"trailing(int)","Kind":"FUNCTION","IsSource":true}
 {"QN":"trailing(int)::v","Kind":"VARIABLE","IsSource":true}
 {"QN":"ty","Kind":"NAMESPACE","IsSource":true}
@@ -1440,6 +1521,7 @@
 {"QN":"Beta","Type":"CONTAIN","Source":"Beta","Target":"Beta::pick()","Mores":"null","IsSource":false}
 {"QN":"Bits","Type":"CONTAIN","Source":"Bits","Target":"Bits::count","Mores":"null","IsSource":false}
 {"QN":"Bits","Type":"CONTAIN","Source":"Bits","Target":"Bits::flag","Mores":"null","IsSource":false}
+{"QN":"Blob","Type":"CONTAIN","Source":"Blob","Target":"Blob::v","Mores":"null","IsSource":false}
 {"QN":"Box","Type":"CONTAIN","Source":"Box","Target":"Box::int_value","Mores":"null","IsSource":false}
 {"QN":"Box","Type":"CONTAIN","Source":"Box","Target":"Box::ptr_value","Mores":"null","IsSource":false}
 {"QN":"Box","Type":"CONTAIN","Source":"Box","Target":"Box::put(T)","Mores":"null","IsSource":false}
@@ -1503,6 +1585,7 @@
 {"QN":"DupTag","Type":"CONTAIN","Source":"DupTag","Target":"DupTag::a","Mores":"null","IsSource":false}
 {"QN":"DupTag2","Type":"CONTAIN","Source":"DupTag2","Target":"DupTag2::b","Mores":"null","IsSource":false}
 {"QN":"E","Type":"CONTAIN","Source":"E","Target":"E::E_A","Mores":"null","IsSource":false}
+{"QN":"Fallback","Type":"CONTAIN","Source":"Fallback","Target":"Fallback::Fallback()","Mores":"null","IsSource":false}
 {"QN":"FinalClass","Type":"CONTAIN","Source":"FinalClass","Target":"FinalClass::fv","Mores":"null","IsSource":false}
 {"QN":"FinalDerived","Type":"CONTAIN","Source":"FinalDerived","Target":"FinalDerived::fb()","Mores":"null","IsSource":false}
 {"QN":"FinalDerived","Type":"EXTEND","Source":"FinalDerived","Target":"BaseB","Mores":"{\"cpp.rel.raw_text\":\"BaseB\"}","IsSource":false}
@@ -1525,6 +1608,7 @@
 {"QN":"GlobalCls::method(int)","Type":"CONTAIN","Source":"GlobalCls::method(int)","Target":"GlobalCls::method(int)::x","Mores":"null","IsSource":false}
 {"QN":"GlobalCls::method(int)","Type":"IMPL_LINK","Source":"GlobalCls::method(int)","Target":"GlobalCls::method(int)","Mores":"{\"cpp.rel.impl_link.signature\":\"GlobalCls::method(int)(int)\"}","IsSource":false}
 {"QN":"GlobalCls::method(int)","Type":"USE","Source":"GlobalCls::method(int)","Target":"GlobalCls::method(int)::x","Location":"collector/cpp/display/display_outofline.cpp:29","Mores":"{\"cpp.rel.ast_kind\":\"identifier\",\"cpp.rel.raw_text\":\"x\"}","IsSource":false}
+{"QN":"Guarded","Type":"CONTAIN","Source":"Guarded","Target":"Guarded::Guarded()","Mores":"null","IsSource":false}
 {"QN":"Holder","Type":"CONTAIN","Source":"Holder","Target":"Holder::fn_field","Mores":"null","IsSource":false}
 {"QN":"Holder","Type":"CONTAIN","Source":"Holder","Target":"Holder::l1","Mores":"null","IsSource":false}
 {"QN":"Holder","Type":"CONTAIN","Source":"Holder","Target":"Holder::lambda$1","Mores":"null","IsSource":false}
@@ -2540,6 +2624,19 @@
 {"QN":"collector/cpp/cond/cnd.cpp","Type":"CONTAIN","Source":"collector/cpp/cond/cnd.cpp","Target":"cond_func()","Mores":"null","IsSource":false}
 {"QN":"collector/cpp/cond/cnd.cpp","Type":"CONTAIN","Source":"collector/cpp/cond/cnd.cpp","Target":"cond_nested","Mores":"null","IsSource":false}
 {"QN":"collector/cpp/cond/cnd.cpp","Type":"CONTAIN","Source":"collector/cpp/cond/cnd.cpp","Target":"cond_outer_only","Mores":"null","IsSource":false}
+{"QN":"collector/cpp/cond/dead.cpp","Type":"CONTAIN","Source":"collector/cpp/cond/dead.cpp","Target":"deadzone","Mores":"null","IsSource":false}
+{"QN":"collector/cpp/cond/dead.cpp","Type":"CONTAIN","Source":"collector/cpp/cond/dead.cpp","Target":"deadzone::live()","Mores":"null","IsSource":false}
+{"QN":"collector/cpp/cond/dead_span.cpp","Type":"CONTAIN","Source":"collector/cpp/cond/dead_span.cpp","Target":"deadspan","Mores":"null","IsSource":false}
+{"QN":"collector/cpp/cond/dead_span.cpp","Type":"CONTAIN","Source":"collector/cpp/cond/dead_span.cpp","Target":"deadspan::after()","Mores":"null","IsSource":false}
+{"QN":"collector/cpp/cond/dead_span.cpp","Type":"CONTAIN","Source":"collector/cpp/cond/dead_span.cpp","Target":"deadspan::before()","Mores":"null","IsSource":false}
+{"QN":"collector/cpp/cond/dead_span.cpp","Type":"CONTAIN","Source":"collector/cpp/cond/dead_span.cpp","Target":"deadspan::chain()","Mores":"null","IsSource":false}
+{"QN":"collector/cpp/cond/dup.cpp","Type":"CONTAIN","Source":"collector/cpp/cond/dup.cpp","Target":"dupzone","Mores":"null","IsSource":false}
+{"QN":"collector/cpp/cond/dup.cpp","Type":"CONTAIN","Source":"collector/cpp/cond/dup.cpp","Target":"dupzone::g()","Mores":"null","IsSource":false}
+{"QN":"collector/cpp/cond/nested.cpp","Type":"CONTAIN","Source":"collector/cpp/cond/nested.cpp","Target":"nested","Mores":"null","IsSource":false}
+{"QN":"collector/cpp/cond/nested.cpp","Type":"CONTAIN","Source":"collector/cpp/cond/nested.cpp","Target":"nested::f_1_1()","Mores":"null","IsSource":false}
+{"QN":"collector/cpp/cond/nested.cpp","Type":"CONTAIN","Source":"collector/cpp/cond/nested.cpp","Target":"nested::f_1_2()","Mores":"null","IsSource":false}
+{"QN":"collector/cpp/cond/nested.cpp","Type":"CONTAIN","Source":"collector/cpp/cond/nested.cpp","Target":"nested::f_2_1()","Mores":"null","IsSource":false}
+{"QN":"collector/cpp/cond/nested.cpp","Type":"CONTAIN","Source":"collector/cpp/cond/nested.cpp","Target":"nested::f_2_2()","Mores":"null","IsSource":false}
 {"QN":"collector/cpp/ctor_dtor/ctor.cpp","Type":"CONTAIN","Source":"collector/cpp/ctor_dtor/ctor.cpp","Target":"Defaulted","Mores":"null","IsSource":false}
 {"QN":"collector/cpp/ctor_dtor/ctor.cpp","Type":"CONTAIN","Source":"collector/cpp/ctor_dtor/ctor.cpp","Target":"Delegating","Mores":"null","IsSource":false}
 {"QN":"collector/cpp/ctor_dtor/ctor.cpp","Type":"CONTAIN","Source":"collector/cpp/ctor_dtor/ctor.cpp","Target":"Deleted","Mores":"null","IsSource":false}
@@ -2556,6 +2653,9 @@
 {"QN":"collector/cpp/decl_def/decl_def.h","Type":"CONTAIN","Source":"collector/cpp/decl_def/decl_def.h","Target":"CPP_DECL_DEF_H","Mores":"null","IsSource":false}
 {"QN":"collector/cpp/decl_def/decl_def.h","Type":"CONTAIN","Source":"collector/cpp/decl_def/decl_def.h","Target":"DeclaredClass","Mores":"null","IsSource":false}
 {"QN":"collector/cpp/decl_def/decl_def.h","Type":"CONTAIN","Source":"collector/cpp/decl_def/decl_def.h","Target":"DefinedInHeader","Mores":"null","IsSource":false}
+{"QN":"collector/cpp/decl_def/decl_def.h","Type":"CONTAIN","Source":"collector/cpp/decl_def/decl_def.h","Target":"FwdClass","Mores":"null","IsSource":false}
+{"QN":"collector/cpp/decl_def/decl_def.h","Type":"CONTAIN","Source":"collector/cpp/decl_def/decl_def.h","Target":"FwdEnum","Mores":"null","IsSource":false}
+{"QN":"collector/cpp/decl_def/decl_def.h","Type":"CONTAIN","Source":"collector/cpp/decl_def/decl_def.h","Target":"FwdStruct","Mores":"null","IsSource":false}
 {"QN":"collector/cpp/decl_def/decl_def.h","Type":"CONTAIN","Source":"collector/cpp/decl_def/decl_def.h","Target":"extern_var","Mores":"null","IsSource":false}
 {"QN":"collector/cpp/decl_def/decl_def.h","Type":"CONTAIN","Source":"collector/cpp/decl_def/decl_def.h","Target":"header_func(int)","Mores":"null","IsSource":false}
 {"QN":"collector/cpp/display/display_c.c","Type":"CONTAIN","Source":"collector/cpp/display/display_c.c","Target":"CEnum","Mores":"null","IsSource":false}
@@ -2693,10 +2793,14 @@
 {"QN":"collector/cpp/macro/mac.cpp","Type":"CONTAIN","Source":"collector/cpp/macro/mac.cpp","Target":"FEATURE_VAL","Mores":"null","IsSource":false}
 {"QN":"collector/cpp/macro/mac.cpp","Type":"CONTAIN","Source":"collector/cpp/macro/mac.cpp","Target":"FEATURE_VAL$2","Mores":"null","IsSource":false}
 {"QN":"collector/cpp/macro/mac.cpp","Type":"CONTAIN","Source":"collector/cpp/macro/mac.cpp","Target":"FUNC_MACRO","Mores":"null","IsSource":false}
+{"QN":"collector/cpp/macro/mac.cpp","Type":"CONTAIN","Source":"collector/cpp/macro/mac.cpp","Target":"FUNC_SCOPED_MACRO","Mores":"null","IsSource":false}
 {"QN":"collector/cpp/macro/mac.cpp","Type":"CONTAIN","Source":"collector/cpp/macro/mac.cpp","Target":"MULTI_LINE","Mores":"null","IsSource":false}
+{"QN":"collector/cpp/macro/mac.cpp","Type":"CONTAIN","Source":"collector/cpp/macro/mac.cpp","Target":"NS_MACRO","Mores":"null","IsSource":false}
 {"QN":"collector/cpp/macro/mac.cpp","Type":"CONTAIN","Source":"collector/cpp/macro/mac.cpp","Target":"OBJ_MACRO","Mores":"null","IsSource":false}
 {"QN":"collector/cpp/macro/mac.cpp","Type":"CONTAIN","Source":"collector/cpp/macro/mac.cpp","Target":"STR_MACRO","Mores":"null","IsSource":false}
 {"QN":"collector/cpp/macro/mac.cpp","Type":"CONTAIN","Source":"collector/cpp/macro/mac.cpp","Target":"VAR_MACRO","Mores":"null","IsSource":false}
+{"QN":"collector/cpp/macro/mac.cpp","Type":"CONTAIN","Source":"collector/cpp/macro/mac.cpp","Target":"macro_in_func()","Mores":"null","IsSource":false}
+{"QN":"collector/cpp/macro/mac.cpp","Type":"CONTAIN","Source":"collector/cpp/macro/mac.cpp","Target":"macro_ns","Mores":"null","IsSource":false}
 {"QN":"collector/cpp/macro/mac.cpp","Type":"CONTAIN","Source":"collector/cpp/macro/mac.cpp","Target":"use_macros()","Mores":"null","IsSource":false}
 {"QN":"collector/cpp/namespace/ns.cpp","Type":"CONTAIN","Source":"collector/cpp/namespace/ns.cpp","Target":"$anon","Mores":"null","IsSource":false}
 {"QN":"collector/cpp/namespace/ns.cpp","Type":"CONTAIN","Source":"collector/cpp/namespace/ns.cpp","Target":"$anon::AnonStruct","Mores":"null","IsSource":false}
@@ -2727,13 +2831,20 @@
 {"QN":"collector/cpp/param/prm.cpp","Type":"CONTAIN","Source":"collector/cpp/param/prm.cpp","Target":"by_user_type(PStruct,PEnum,PStruct*)","Mores":"null","IsSource":false}
 {"QN":"collector/cpp/param/prm.cpp","Type":"CONTAIN","Source":"collector/cpp/param/prm.cpp","Target":"by_value(int,double,char)","Mores":"null","IsSource":false}
 {"QN":"collector/cpp/param/prm.cpp","Type":"CONTAIN","Source":"collector/cpp/param/prm.cpp","Target":"by_variadic(int)","Mores":"null","IsSource":false}
+{"QN":"collector/cpp/param/signature.cpp","Type":"CONTAIN","Source":"collector/cpp/param/signature.cpp","Target":"Blob","Mores":"null","IsSource":false}
+{"QN":"collector/cpp/param/signature.cpp","Type":"CONTAIN","Source":"collector/cpp/param/signature.cpp","Target":"dup_sig$2(int,int)","Mores":"null","IsSource":false}
+{"QN":"collector/cpp/param/signature.cpp","Type":"CONTAIN","Source":"collector/cpp/param/signature.cpp","Target":"dup_sig(int,int)","Mores":"null","IsSource":false}
+{"QN":"collector/cpp/param/signature.cpp","Type":"CONTAIN","Source":"collector/cpp/param/signature.cpp","Target":"nested_tpl(std::map)","Mores":"null","IsSource":false}
+{"QN":"collector/cpp/param/signature.cpp","Type":"CONTAIN","Source":"collector/cpp/param/signature.cpp","Target":"spacing(const char*,unsigned int,const Blob\u0026)","Mores":"null","IsSource":false}
+{"QN":"collector/cpp/param/signature.cpp","Type":"CONTAIN","Source":"collector/cpp/param/signature.cpp","Target":"tpl_array(Blob[],Blob*[])","Mores":"null","IsSource":false}
+{"QN":"collector/cpp/param/signature.cpp","Type":"CONTAIN","Source":"collector/cpp/param/signature.cpp","Target":"tpl_param(const Blob\u0026,Blob*,Blob\u0026\u0026)","Mores":"null","IsSource":false}
 {"QN":"collector/cpp/scope/scp.cpp","Type":"CONTAIN","Source":"collector/cpp/scope/scp.cpp","Target":"scope_user(int)","Mores":"null","IsSource":false}
 {"QN":"collector/cpp/template/tpl.cpp","Type":"CONTAIN","Source":"collector/cpp/template/tpl.cpp","Target":"Box","Mores":"null","IsSource":false}
 {"QN":"collector/cpp/template/tpl.cpp","Type":"CONTAIN","Source":"collector/cpp/template/tpl.cpp","Target":"BoxAlias","Mores":"null","IsSource":false}
 {"QN":"collector/cpp/template/tpl.cpp","Type":"CONTAIN","Source":"collector/cpp/template/tpl.cpp","Target":"Map","Mores":"null","IsSource":false}
 {"QN":"collector/cpp/template/tpl.cpp","Type":"CONTAIN","Source":"collector/cpp/template/tpl.cpp","Target":"Tuple","Mores":"null","IsSource":false}
 {"QN":"collector/cpp/template/tpl.cpp","Type":"CONTAIN","Source":"collector/cpp/template/tpl.cpp","Target":"constrained_func(T)","Mores":"null","IsSource":false}
-{"QN":"collector/cpp/template/tpl.cpp","Type":"CONTAIN","Source":"collector/cpp/template/tpl.cpp","Target":"count_args(Ts... args)","Mores":"null","IsSource":false}
+{"QN":"collector/cpp/template/tpl.cpp","Type":"CONTAIN","Source":"collector/cpp/template/tpl.cpp","Target":"count_args(Ts...)","Mores":"null","IsSource":false}
 {"QN":"collector/cpp/template/tpl.cpp","Type":"CONTAIN","Source":"collector/cpp/template/tpl.cpp","Target":"identity(T)","Mores":"null","IsSource":false}
 {"QN":"collector/cpp/template/tpl.cpp","Type":"CONTAIN","Source":"collector/cpp/template/tpl.cpp","Target":"identity(int)","Mores":"null","IsSource":false}
 {"QN":"collector/cpp/typedef_using/td.cpp","Type":"CONTAIN","Source":"collector/cpp/typedef_using/td.cpp","Target":"Callback","Mores":"null","IsSource":false}
@@ -2830,7 +2941,48 @@
 {"QN":"current_scoped","Type":"TYPE_ARG","Source":"current_scoped","Target":"Scoped","Mores":"{\"cpp.rel.raw_text\":\"Scoped\"}","IsSource":false}
 {"QN":"cx(int)","Type":"CONTAIN","Source":"cx(int)","Target":"cx(int)::v","Mores":"null","IsSource":false}
 {"QN":"cx(int)","Type":"USE","Source":"cx(int)","Target":"cx(int)::v","Location":"collector/cpp/function/fn.cpp:18","Mores":"{\"cpp.rel.ast_kind\":\"identifier\",\"cpp.rel.raw_text\":\"v\"}","IsSource":false}
+{"QN":"deadspan","Type":"CONTAIN","Source":"deadspan","Target":"collector/cpp/cond/dead_span.cpp","Mores":"null","IsSource":false}
+{"QN":"deadspan","Type":"CONTAIN","Source":"deadspan","Target":"deadspan::after()","Mores":"null","IsSource":false}
+{"QN":"deadspan","Type":"CONTAIN","Source":"deadspan","Target":"deadspan::before()","Mores":"null","IsSource":false}
+{"QN":"deadspan","Type":"CONTAIN","Source":"deadspan","Target":"deadspan::chain()","Mores":"null","IsSource":false}
+{"QN":"deadzone","Type":"CONTAIN","Source":"deadzone","Target":"collector/cpp/cond/dead.cpp","Mores":"null","IsSource":false}
+{"QN":"deadzone","Type":"CONTAIN","Source":"deadzone","Target":"deadzone::live()","Mores":"null","IsSource":false}
 {"QN":"declared_only(int)","Type":"CONTAIN","Source":"declared_only(int)","Target":"declared_only(int)::a","Mores":"null","IsSource":false}
+{"QN":"demo","Type":"CONTAIN","Source":"demo","Target":"demo::Conn","Mores":"null","IsSource":false}
+{"QN":"demo","Type":"CONTAIN","Source":"demo","Target":"demo::Socket","Mores":"null","IsSource":false}
+{"QN":"demo","Type":"CONTAIN","Source":"demo","Target":"demo::live_function()","Mores":"null","IsSource":false}
+{"QN":"demo","Type":"CONTAIN","Source":"demo","Target":"demo::nested_var","Mores":"null","IsSource":false}
+{"QN":"demo","Type":"CONTAIN","Source":"demo","Target":"demo::other_var","Mores":"null","IsSource":false}
+{"QN":"demo","Type":"CONTAIN","Source":"demo","Target":"demo::outer_only","Mores":"null","IsSource":false}
+{"QN":"demo","Type":"CONTAIN","Source":"demo","Target":"demo::read_socket(socket_t,void*,size_t,int)","Mores":"null","IsSource":false}
+{"QN":"demo","Type":"CONTAIN","Source":"demo","Target":"preproc/has_include.cpp","Mores":"null","IsSource":false}
+{"QN":"demo","Type":"CONTAIN","Source":"demo","Target":"preproc/if_zero.cpp","Mores":"null","IsSource":false}
+{"QN":"demo","Type":"CONTAIN","Source":"demo","Target":"preproc/member_init.cpp","Mores":"null","IsSource":false}
+{"QN":"demo","Type":"CONTAIN","Source":"demo","Target":"preproc/nested.cpp","Mores":"null","IsSource":false}
+{"QN":"demo","Type":"CONTAIN","Source":"demo","Target":"preproc/split_args.cpp","Mores":"null","IsSource":false}
+{"QN":"demo::Conn","Type":"CONTAIN","Source":"demo::Conn","Target":"demo::Conn::Conn(Conn\u0026\u0026)","Mores":"null","IsSource":false}
+{"QN":"demo::Conn","Type":"CONTAIN","Source":"demo::Conn","Target":"demo::Conn::sock","Mores":"null","IsSource":false}
+{"QN":"demo::Conn::Conn(Conn\u0026\u0026)","Type":"ASSIGN","Source":"demo::Conn::Conn(Conn\u0026\u0026)","Target":"demo::Conn::sock","Location":"preproc/member_init.cpp:7","Mores":"{\"cpp.rel.assign.is_initializer\":true,\"cpp.rel.ast_kind\":\"field_initializer\",\"cpp.rel.raw_text\":\"sock\"}","IsSource":false}
+{"QN":"demo::Conn::Conn(Conn\u0026\u0026)","Type":"CONTAIN","Source":"demo::Conn::Conn(Conn\u0026\u0026)","Target":"demo::Conn::Conn(Conn\u0026\u0026)::other","Mores":"null","IsSource":false}
+{"QN":"demo::Conn::Conn(Conn\u0026\u0026)","Type":"PARAMETER","Source":"demo::Conn::Conn(Conn\u0026\u0026)","Target":"demo::Conn","Mores":"{\"cpp.rel.raw_text\":\"Conn\\u0026\\u0026 other\"}","IsSource":false}
+{"QN":"demo::Conn::Conn(Conn\u0026\u0026)","Type":"USE","Source":"demo::Conn::Conn(Conn\u0026\u0026)","Target":"demo::Conn::sock","Location":"preproc/member_init.cpp:7","Mores":"{\"cpp.rel.ast_kind\":\"field_expression\",\"cpp.rel.raw_text\":\"other.sock\"}","IsSource":false}
+{"QN":"demo::Conn::Conn(Conn\u0026\u0026)::other","Type":"TYPE_ARG","Source":"demo::Conn::Conn(Conn\u0026\u0026)::other","Target":"demo::Conn","Mores":"{\"cpp.rel.raw_text\":\"Conn\"}","IsSource":false}
+{"QN":"demo::Socket","Type":"CONTAIN","Source":"demo::Socket","Target":"demo::Socket::Socket()","Mores":"null","IsSource":false}
+{"QN":"demo::read_socket(socket_t,void*,size_t,int)","Type":"CONTAIN","Source":"demo::read_socket(socket_t,void*,size_t,int)","Target":"demo::read_socket(socket_t,void*,size_t,int)::flags","Mores":"null","IsSource":false}
+{"QN":"demo::read_socket(socket_t,void*,size_t,int)","Type":"CONTAIN","Source":"demo::read_socket(socket_t,void*,size_t,int)","Target":"demo::read_socket(socket_t,void*,size_t,int)::lambda$1","Mores":"null","IsSource":false}
+{"QN":"demo::read_socket(socket_t,void*,size_t,int)","Type":"CONTAIN","Source":"demo::read_socket(socket_t,void*,size_t,int)","Target":"demo::read_socket(socket_t,void*,size_t,int)::ptr","Mores":"null","IsSource":false}
+{"QN":"demo::read_socket(socket_t,void*,size_t,int)","Type":"CONTAIN","Source":"demo::read_socket(socket_t,void*,size_t,int)","Target":"demo::read_socket(socket_t,void*,size_t,int)::size","Mores":"null","IsSource":false}
+{"QN":"demo::read_socket(socket_t,void*,size_t,int)","Type":"CONTAIN","Source":"demo::read_socket(socket_t,void*,size_t,int)","Target":"demo::read_socket(socket_t,void*,size_t,int)::sock","Mores":"null","IsSource":false}
+{"QN":"demo::read_socket(socket_t,void*,size_t,int)::lambda$1","Type":"CAPTURE","Source":"demo::read_socket(socket_t,void*,size_t,int)::lambda$1","Target":"demo::read_socket(socket_t,void*,size_t,int)::flags","Location":"preproc/split_args.cpp:12","Mores":"{\"cpp.rel.raw_text\":\"flags\"}","IsSource":false}
+{"QN":"demo::read_socket(socket_t,void*,size_t,int)::lambda$1","Type":"CAPTURE","Source":"demo::read_socket(socket_t,void*,size_t,int)::lambda$1","Target":"demo::read_socket(socket_t,void*,size_t,int)::ptr","Location":"preproc/split_args.cpp:8","Mores":"{\"cpp.rel.raw_text\":\"ptr\"}","IsSource":false}
+{"QN":"demo::read_socket(socket_t,void*,size_t,int)::lambda$1","Type":"CAPTURE","Source":"demo::read_socket(socket_t,void*,size_t,int)::lambda$1","Target":"demo::read_socket(socket_t,void*,size_t,int)::size","Location":"preproc/split_args.cpp:8","Mores":"{\"cpp.rel.raw_text\":\"size\"}","IsSource":false}
+{"QN":"demo::read_socket(socket_t,void*,size_t,int)::lambda$1","Type":"CAPTURE","Source":"demo::read_socket(socket_t,void*,size_t,int)::lambda$1","Target":"demo::read_socket(socket_t,void*,size_t,int)::sock","Location":"preproc/split_args.cpp:6","Mores":"{\"cpp.rel.raw_text\":\"sock\"}","IsSource":false}
+{"QN":"demo::read_socket(socket_t,void*,size_t,int)::lambda$1","Type":"USE","Source":"demo::read_socket(socket_t,void*,size_t,int)::lambda$1","Target":"demo::read_socket(socket_t,void*,size_t,int)::flags","Location":"preproc/split_args.cpp:12","Mores":"{\"cpp.rel.ast_kind\":\"identifier\",\"cpp.rel.raw_text\":\"flags\"}","IsSource":false}
+{"QN":"demo::read_socket(socket_t,void*,size_t,int)::lambda$1","Type":"USE","Source":"demo::read_socket(socket_t,void*,size_t,int)::lambda$1","Target":"demo::read_socket(socket_t,void*,size_t,int)::ptr","Location":"preproc/split_args.cpp:10","Mores":"{\"cpp.rel.ast_kind\":\"identifier\",\"cpp.rel.raw_text\":\"ptr\"}","IsSource":false}
+{"QN":"demo::read_socket(socket_t,void*,size_t,int)::lambda$1","Type":"USE","Source":"demo::read_socket(socket_t,void*,size_t,int)::lambda$1","Target":"demo::read_socket(socket_t,void*,size_t,int)::ptr","Location":"preproc/split_args.cpp:8","Mores":"{\"cpp.rel.ast_kind\":\"identifier\",\"cpp.rel.raw_text\":\"ptr\"}","IsSource":false}
+{"QN":"demo::read_socket(socket_t,void*,size_t,int)::lambda$1","Type":"USE","Source":"demo::read_socket(socket_t,void*,size_t,int)::lambda$1","Target":"demo::read_socket(socket_t,void*,size_t,int)::size","Location":"preproc/split_args.cpp:10","Mores":"{\"cpp.rel.ast_kind\":\"identifier\",\"cpp.rel.raw_text\":\"size\"}","IsSource":false}
+{"QN":"demo::read_socket(socket_t,void*,size_t,int)::lambda$1","Type":"USE","Source":"demo::read_socket(socket_t,void*,size_t,int)::lambda$1","Target":"demo::read_socket(socket_t,void*,size_t,int)::size","Location":"preproc/split_args.cpp:8","Mores":"{\"cpp.rel.ast_kind\":\"identifier\",\"cpp.rel.raw_text\":\"size\"}","IsSource":false}
+{"QN":"demo::read_socket(socket_t,void*,size_t,int)::lambda$1","Type":"USE","Source":"demo::read_socket(socket_t,void*,size_t,int)::lambda$1","Target":"demo::read_socket(socket_t,void*,size_t,int)::sock","Location":"preproc/split_args.cpp:6","Mores":"{\"cpp.rel.ast_kind\":\"identifier\",\"cpp.rel.raw_text\":\"sock\"}","IsSource":false}
 {"QN":"dup_blocks()","Type":"CONTAIN","Source":"dup_blocks()","Target":"dup_blocks()::block$1","Mores":"null","IsSource":false}
 {"QN":"dup_blocks()","Type":"CONTAIN","Source":"dup_blocks()","Target":"dup_blocks()::block$2","Mores":"null","IsSource":false}
 {"QN":"dup_blocks()::block$1","Type":"ASSIGN","Source":"dup_blocks()::block$1","Target":"dup_blocks()::block$1::dup","Location":"collector/c/edge/edge.c:18","Mores":"{\"cpp.rel.assign.is_initializer\":true,\"cpp.rel.ast_kind\":\"init_declarator\",\"cpp.rel.raw_text\":\"dup\"}","IsSource":false}
@@ -2847,6 +2999,20 @@
 {"QN":"dup_fn(int,int)","Type":"USE","Source":"dup_fn(int,int)","Target":"dup_fn(int,int)::b","Location":"collector/cpp/edge/edg.cpp:23","Mores":"{\"cpp.rel.ast_kind\":\"identifier\",\"cpp.rel.raw_text\":\"b\"}","IsSource":false}
 {"QN":"dup_ns","Type":"CONTAIN","Source":"dup_ns","Target":"collector/cpp/edge/edg.cpp","Mores":"null","IsSource":false}
 {"QN":"dup_ns","Type":"CONTAIN","Source":"dup_ns","Target":"dup_ns::dup_var","Mores":"null","IsSource":false}
+{"QN":"dup_sig$2(int,int)","Type":"CONTAIN","Source":"dup_sig$2(int,int)","Target":"dup_sig$2(int,int)::a","Mores":"null","IsSource":false}
+{"QN":"dup_sig$2(int,int)","Type":"CONTAIN","Source":"dup_sig$2(int,int)","Target":"dup_sig$2(int,int)::b","Mores":"null","IsSource":false}
+{"QN":"dup_sig$2(int,int)","Type":"USE","Source":"dup_sig$2(int,int)","Target":"dup_sig$2(int,int)::a","Location":"collector/cpp/param/signature.cpp:23","Mores":"{\"cpp.rel.ast_kind\":\"identifier\",\"cpp.rel.raw_text\":\"a\"}","IsSource":false}
+{"QN":"dup_sig$2(int,int)","Type":"USE","Source":"dup_sig$2(int,int)","Target":"dup_sig$2(int,int)::b","Location":"collector/cpp/param/signature.cpp:23","Mores":"{\"cpp.rel.ast_kind\":\"identifier\",\"cpp.rel.raw_text\":\"b\"}","IsSource":false}
+{"QN":"dup_sig(int,int)","Type":"CONTAIN","Source":"dup_sig(int,int)","Target":"dup_sig(int,int)::a","Mores":"null","IsSource":false}
+{"QN":"dup_sig(int,int)","Type":"CONTAIN","Source":"dup_sig(int,int)","Target":"dup_sig(int,int)::b","Mores":"null","IsSource":false}
+{"QN":"dup_sig(int,int)","Type":"USE","Source":"dup_sig(int,int)","Target":"dup_sig(int,int)::a","Location":"collector/cpp/param/signature.cpp:22","Mores":"{\"cpp.rel.ast_kind\":\"identifier\",\"cpp.rel.raw_text\":\"a\"}","IsSource":false}
+{"QN":"dup_sig(int,int)","Type":"USE","Source":"dup_sig(int,int)","Target":"dup_sig(int,int)::b","Location":"collector/cpp/param/signature.cpp:22","Mores":"{\"cpp.rel.ast_kind\":\"identifier\",\"cpp.rel.raw_text\":\"b\"}","IsSource":false}
+{"QN":"dupzone","Type":"CONTAIN","Source":"dupzone","Target":"collector/cpp/cond/dup.cpp","Mores":"null","IsSource":false}
+{"QN":"dupzone","Type":"CONTAIN","Source":"dupzone","Target":"dupzone::g()","Mores":"null","IsSource":false}
+{"QN":"dupzone::g()","Type":"ASSIGN","Source":"dupzone::g()","Target":"dupzone::g()::x","Location":"collector/cpp/cond/dup.cpp:6","Mores":"{\"cpp.rel.assign.is_initializer\":true,\"cpp.rel.ast_kind\":\"init_declarator\",\"cpp.rel.raw_text\":\"x\"}","IsSource":false}
+{"QN":"dupzone::g()","Type":"CONTAIN","Source":"dupzone::g()","Target":"dupzone::g()::x","Mores":"null","IsSource":false}
+{"QN":"dupzone::g()","Type":"USE","Source":"dupzone::g()","Target":"dupzone::g()::x","Location":"collector/cpp/cond/dup.cpp:10","Mores":"{\"cpp.rel.ast_kind\":\"identifier\",\"cpp.rel.raw_text\":\"x\"}","IsSource":false}
+{"QN":"dupzone::g()","Type":"USE","Source":"dupzone::g()","Target":"dupzone::g()::x","Location":"collector/cpp/cond/dup.cpp:8","Mores":"{\"cpp.rel.ast_kind\":\"identifier\",\"cpp.rel.raw_text\":\"x\"}","IsSource":false}
 {"QN":"ext","Type":"CONTAIN","Source":"ext","Target":"ext::Local","Mores":"null","IsSource":false}
 {"QN":"ext","Type":"CONTAIN","Source":"ext","Target":"ext::external_user()","Mores":"null","IsSource":false}
 {"QN":"ext","Type":"CONTAIN","Source":"ext","Target":"ext::identity(T)","Mores":"null","IsSource":false}
@@ -3359,6 +3525,7 @@
 {"QN":"local_proto(int)","Type":"CONTAIN","Source":"local_proto(int)","Target":"local_proto(int)::a","Mores":"null","IsSource":false}
 {"QN":"local_proto(int)","Type":"IMPL_LINK","Source":"local_proto(int)","Target":"local_proto(int)","Mores":"{\"cpp.rel.impl_link.signature\":\"local_proto(int)(int)\"}","IsSource":false}
 {"QN":"local_proto(int)","Type":"USE","Source":"local_proto(int)","Target":"local_proto(int)::a","Location":"collector/cpp/decl_def/decl_def.cpp:7","Mores":"{\"cpp.rel.ast_kind\":\"identifier\",\"cpp.rel.raw_text\":\"a\"}","IsSource":false}
+{"QN":"macro_ns","Type":"CONTAIN","Source":"macro_ns","Target":"collector/cpp/macro/mac.cpp","Mores":"null","IsSource":false}
 {"QN":"makeL1(Holder*)","Type":"CONTAIN","Source":"makeL1(Holder*)","Target":"makeL1(Holder*)::h","Mores":"null","IsSource":false}
 {"QN":"makeL1(Holder*)","Type":"PARAMETER","Source":"makeL1(Holder*)","Target":"Holder","Mores":"{\"cpp.rel.raw_text\":\"Holder* h\"}","IsSource":false}
 {"QN":"makeL1(Holder*)","Type":"RETURN","Source":"makeL1(Holder*)","Target":"L1","Mores":"{\"cpp.rel.raw_text\":\"L1\"}","IsSource":false}
@@ -3420,6 +3587,12 @@
 {"QN":"named(int,char*)","Type":"CONTAIN","Source":"named(int,char*)","Target":"named(int,char*)::p","Mores":"null","IsSource":false}
 {"QN":"named(int,char*)","Type":"USE","Source":"named(int,char*)","Target":"named(int,char*)::a","Location":"collector/c/param/param.c:14","Mores":"{\"cpp.rel.ast_kind\":\"identifier\",\"cpp.rel.raw_text\":\"a\"}","IsSource":false}
 {"QN":"named(int,char*)","Type":"USE","Source":"named(int,char*)","Target":"named(int,char*)::p","Location":"collector/c/param/param.c:15","Mores":"{\"cpp.rel.ast_kind\":\"identifier\",\"cpp.rel.raw_text\":\"p\"}","IsSource":false}
+{"QN":"nested","Type":"CONTAIN","Source":"nested","Target":"collector/cpp/cond/nested.cpp","Mores":"null","IsSource":false}
+{"QN":"nested","Type":"CONTAIN","Source":"nested","Target":"nested::f_1_1()","Mores":"null","IsSource":false}
+{"QN":"nested","Type":"CONTAIN","Source":"nested","Target":"nested::f_1_2()","Mores":"null","IsSource":false}
+{"QN":"nested","Type":"CONTAIN","Source":"nested","Target":"nested::f_2_1()","Mores":"null","IsSource":false}
+{"QN":"nested","Type":"CONTAIN","Source":"nested","Target":"nested::f_2_2()","Mores":"null","IsSource":false}
+{"QN":"nested_tpl(std::map)","Type":"CONTAIN","Source":"nested_tpl(std::map)","Target":"nested_tpl(std::map)::m","Mores":"null","IsSource":false}
 {"QN":"never_defined(int)","Type":"CONTAIN","Source":"never_defined(int)","Target":"never_defined(int)::a","Mores":"null","IsSource":false}
 {"QN":"never_defined(int)","Type":"CONTAIN","Source":"never_defined(int)","Target":"never_defined(int)::x","Mores":"null","IsSource":false}
 {"QN":"ns_inline","Type":"CONTAIN","Source":"ns_inline","Target":"collector/cpp/display/display_ns.cpp","Mores":"null","IsSource":false}
@@ -3668,6 +3841,27 @@
 {"QN":"overloaded(int,int)","Type":"CONTAIN","Source":"overloaded(int,int)","Target":"overloaded(int,int)::b","Mores":"null","IsSource":false}
 {"QN":"overloaded(int,int)","Type":"USE","Source":"overloaded(int,int)","Target":"overloaded(int,int)::a","Location":"collector/cpp/function/fn.cpp:36","Mores":"{\"cpp.rel.ast_kind\":\"identifier\",\"cpp.rel.raw_text\":\"a\"}","IsSource":false}
 {"QN":"overloaded(int,int)","Type":"USE","Source":"overloaded(int,int)","Target":"overloaded(int,int)::b","Location":"collector/cpp/function/fn.cpp:36","Mores":"{\"cpp.rel.ast_kind\":\"identifier\",\"cpp.rel.raw_text\":\"b\"}","IsSource":false}
+{"QN":"preproc/guard.h","Type":"CONTAIN","Source":"preproc/guard.h","Target":"DEMO_GUARD_H","Mores":"null","IsSource":false}
+{"QN":"preproc/guard.h","Type":"CONTAIN","Source":"preproc/guard.h","Target":"Fallback","Mores":"null","IsSource":false}
+{"QN":"preproc/guard.h","Type":"CONTAIN","Source":"preproc/guard.h","Target":"Guarded","Mores":"null","IsSource":false}
+{"QN":"preproc/has_include.cpp","Type":"CONTAIN","Source":"preproc/has_include.cpp","Target":"HAVE_AFUNIX","Mores":"null","IsSource":false}
+{"QN":"preproc/has_include.cpp","Type":"CONTAIN","Source":"preproc/has_include.cpp","Target":"demo","Mores":"null","IsSource":false}
+{"QN":"preproc/has_include.cpp","Type":"CONTAIN","Source":"preproc/has_include.cpp","Target":"demo::Socket","Mores":"null","IsSource":false}
+{"QN":"preproc/has_include.cpp","Type":"IMPORT","Source":"preproc/has_include.cpp","Target":"afunix.h","Location":"preproc/has_include.cpp:5","Mores":"{\"cpp.rel.include.is_system\":true,\"cpp.rel.raw_text\":\"afunix.h\"}","IsSource":false}
+{"QN":"preproc/has_include.cpp","Type":"IMPORT","Source":"preproc/has_include.cpp","Target":"sys/un.h","Location":"preproc/has_include.cpp:9","Mores":"{\"cpp.rel.include.is_system\":true,\"cpp.rel.raw_text\":\"sys/un.h\"}","IsSource":false}
+{"QN":"preproc/if_zero.cpp","Type":"CONTAIN","Source":"preproc/if_zero.cpp","Target":"demo","Mores":"null","IsSource":false}
+{"QN":"preproc/if_zero.cpp","Type":"CONTAIN","Source":"preproc/if_zero.cpp","Target":"demo::live_function()","Mores":"null","IsSource":false}
+{"QN":"preproc/macro_class.h","Type":"CONTAIN","Source":"preproc/macro_class.h","Target":"testing","Mores":"null","IsSource":false}
+{"QN":"preproc/macro_class.h","Type":"CONTAIN","Source":"preproc/macro_class.h","Target":"testing::ConstCharPtr","Mores":"null","IsSource":false}
+{"QN":"preproc/macro_class.h","Type":"CONTAIN","Source":"preproc/macro_class.h","Target":"testing::Test","Mores":"null","IsSource":false}
+{"QN":"preproc/member_init.cpp","Type":"CONTAIN","Source":"preproc/member_init.cpp","Target":"demo","Mores":"null","IsSource":false}
+{"QN":"preproc/member_init.cpp","Type":"CONTAIN","Source":"preproc/member_init.cpp","Target":"demo::Conn","Mores":"null","IsSource":false}
+{"QN":"preproc/nested.cpp","Type":"CONTAIN","Source":"preproc/nested.cpp","Target":"demo","Mores":"null","IsSource":false}
+{"QN":"preproc/nested.cpp","Type":"CONTAIN","Source":"preproc/nested.cpp","Target":"demo::nested_var","Mores":"null","IsSource":false}
+{"QN":"preproc/nested.cpp","Type":"CONTAIN","Source":"preproc/nested.cpp","Target":"demo::other_var","Mores":"null","IsSource":false}
+{"QN":"preproc/nested.cpp","Type":"CONTAIN","Source":"preproc/nested.cpp","Target":"demo::outer_only","Mores":"null","IsSource":false}
+{"QN":"preproc/split_args.cpp","Type":"CONTAIN","Source":"preproc/split_args.cpp","Target":"demo","Mores":"null","IsSource":false}
+{"QN":"preproc/split_args.cpp","Type":"CONTAIN","Source":"preproc/split_args.cpp","Target":"demo::read_socket(socket_t,void*,size_t,int)","Mores":"null","IsSource":false}
 {"QN":"process()","Type":"ASSIGN","Source":"process()","Target":"Node::value","Location":"collector/base/basic.c:18","Mores":"{\"cpp.rel.assign.operator\":\"=\",\"cpp.rel.ast_kind\":\"assignment_expression\",\"cpp.rel.raw_text\":\"n.value\"}","IsSource":false}
 {"QN":"process()","Type":"ASSIGN","Source":"process()","Target":"Point::x","Location":"collector/base/basic.c:16","Mores":"{\"cpp.rel.assign.operator\":\"=\",\"cpp.rel.ast_kind\":\"assignment_expression\",\"cpp.rel.raw_text\":\"p.x\"}","IsSource":false}
 {"QN":"process()","Type":"ASSIGN","Source":"process()","Target":"Point::x","Location":"resolver/c/anonymous_typedef.c:12","Mores":"{\"cpp.rel.assign.operator\":\"=\",\"cpp.rel.ast_kind\":\"assignment_expression\",\"cpp.rel.raw_text\":\"p.x\"}","IsSource":false}
@@ -3917,6 +4111,11 @@
 {"QN":"scope_user(int)::block$9","Type":"CONTAIN","Source":"scope_user(int)::block$9","Target":"scope_user(int)::block$9::in_try","Mores":"null","IsSource":false}
 {"QN":"signal_like(int,void (*))","Type":"CONTAIN","Source":"signal_like(int,void (*))","Target":"signal_like(int,void (*))::handler","Mores":"null","IsSource":false}
 {"QN":"signal_like(int,void (*))","Type":"CONTAIN","Source":"signal_like(int,void (*))","Target":"signal_like(int,void (*))::sig","Mores":"null","IsSource":false}
+{"QN":"spacing(const char*,unsigned int,const Blob\u0026)","Type":"CONTAIN","Source":"spacing(const char*,unsigned int,const Blob\u0026)","Target":"spacing(const char*,unsigned int,const Blob\u0026)::b","Mores":"null","IsSource":false}
+{"QN":"spacing(const char*,unsigned int,const Blob\u0026)","Type":"CONTAIN","Source":"spacing(const char*,unsigned int,const Blob\u0026)","Target":"spacing(const char*,unsigned int,const Blob\u0026)::n","Mores":"null","IsSource":false}
+{"QN":"spacing(const char*,unsigned int,const Blob\u0026)","Type":"CONTAIN","Source":"spacing(const char*,unsigned int,const Blob\u0026)","Target":"spacing(const char*,unsigned int,const Blob\u0026)::s","Mores":"null","IsSource":false}
+{"QN":"spacing(const char*,unsigned int,const Blob\u0026)","Type":"PARAMETER","Source":"spacing(const char*,unsigned int,const Blob\u0026)","Target":"Blob","Mores":"{\"cpp.rel.raw_text\":\"const Blob\\u003cint\\u003e\\u0026 b\"}","IsSource":false}
+{"QN":"spacing(const char*,unsigned int,const Blob\u0026)::b","Type":"TYPE_ARG","Source":"spacing(const char*,unsigned int,const Blob\u0026)::b","Target":"Blob","Mores":"{\"cpp.rel.raw_text\":\"Blob\\u003cint\\u003e\"}","IsSource":false}
 {"QN":"st","Type":"CONTAIN","Source":"st","Target":"extractor/cpp/structural/nested/deep.h","Mores":"null","IsSource":false}
 {"QN":"st","Type":"CONTAIN","Source":"st","Target":"extractor/cpp/structural/structural.cpp","Mores":"null","IsSource":false}
 {"QN":"st","Type":"CONTAIN","Source":"st","Target":"extractor/cpp/structural/structural.h","Mores":"null","IsSource":false}
@@ -4004,6 +4203,13 @@
 {"QN":"st::use_holder()::h","Type":"TYPE_ARG","Source":"st::use_holder()::h","Target":"st::Holder","Mores":"{\"cpp.rel.raw_text\":\"Holder\\u003cDep\\u003e\"}","IsSource":false}
 {"QN":"static_helper(int)","Type":"CONTAIN","Source":"static_helper(int)","Target":"static_helper(int)::v","Mores":"null","IsSource":false}
 {"QN":"static_helper(int)","Type":"USE","Source":"static_helper(int)","Target":"static_helper(int)::v","Location":"collector/c/func/func.c:14","Mores":"{\"cpp.rel.ast_kind\":\"identifier\",\"cpp.rel.raw_text\":\"v\"}","IsSource":false}
+{"QN":"testing","Type":"CONTAIN","Source":"testing","Target":"preproc/macro_class.h","Mores":"null","IsSource":false}
+{"QN":"testing","Type":"CONTAIN","Source":"testing","Target":"testing::ConstCharPtr","Mores":"null","IsSource":false}
+{"QN":"testing","Type":"CONTAIN","Source":"testing","Target":"testing::Test","Mores":"null","IsSource":false}
+{"QN":"testing::ConstCharPtr","Type":"CONTAIN","Source":"testing::ConstCharPtr","Target":"testing::ConstCharPtr::p","Mores":"null","IsSource":false}
+{"QN":"testing::Test","Type":"CONTAIN","Source":"testing::Test","Target":"testing::Test::Test()","Mores":"null","IsSource":false}
+{"QN":"testing::Test","Type":"CONTAIN","Source":"testing::Test","Target":"testing::Test::run(int)","Mores":"null","IsSource":false}
+{"QN":"testing::Test::run(int)","Type":"CONTAIN","Source":"testing::Test::run(int)","Target":"testing::Test::run(int)::x","Mores":"null","IsSource":false}
 {"QN":"thr","Type":"CONTAIN","Source":"thr","Target":"resolver/cpp/throw/throw.cpp","Mores":"null","IsSource":false}
 {"QN":"thr","Type":"CONTAIN","Source":"thr","Target":"resolver/cpp/throw/throw.h","Mores":"null","IsSource":false}
 {"QN":"thr","Type":"CONTAIN","Source":"thr","Target":"thr::ErrA","Mores":"null","IsSource":false}
@@ -4030,6 +4236,21 @@
 {"QN":"thr::thrower(int)::block$2","Type":"CALL","Source":"thr::thrower(int)::block$2","Target":"thr::ErrB::ErrB","Location":"resolver/cpp/throw/throw.cpp:11","Mores":"{\"cpp.rel.ast_kind\":\"call_expression\",\"cpp.rel.raw_text\":\"ErrB\"}","IsSource":false}
 {"QN":"thr::thrower(int)::block$2","Type":"THROW","Source":"thr::thrower(int)::block$2","Target":"thr::ErrB","Location":"resolver/cpp/throw/throw.cpp:11","Mores":"{\"cpp.rel.ast_kind\":\"throw_statement\",\"cpp.rel.raw_text\":\"ErrB()\"}","IsSource":false}
 {"QN":"thr::thrower(int)::e","Type":"TYPE_ARG","Source":"thr::thrower(int)::e","Target":"thr::ErrA","Mores":"{\"cpp.rel.raw_text\":\"ErrA\"}","IsSource":false}
+{"QN":"tpl_array(Blob[],Blob*[])","Type":"CONTAIN","Source":"tpl_array(Blob[],Blob*[])","Target":"tpl_array(Blob[],Blob*[])::arr","Mores":"null","IsSource":false}
+{"QN":"tpl_array(Blob[],Blob*[])","Type":"CONTAIN","Source":"tpl_array(Blob[],Blob*[])","Target":"tpl_array(Blob[],Blob*[])::ptrs","Mores":"null","IsSource":false}
+{"QN":"tpl_array(Blob[],Blob*[])","Type":"PARAMETER","Source":"tpl_array(Blob[],Blob*[])","Target":"Blob","Mores":"{\"cpp.rel.raw_text\":\"Blob\\u003cint\\u003e*[] ptrs\"}","IsSource":false}
+{"QN":"tpl_array(Blob[],Blob*[])","Type":"PARAMETER","Source":"tpl_array(Blob[],Blob*[])","Target":"Blob","Mores":"{\"cpp.rel.raw_text\":\"Blob\\u003cint\\u003e[] arr\"}","IsSource":false}
+{"QN":"tpl_array(Blob[],Blob*[])::arr","Type":"TYPE_ARG","Source":"tpl_array(Blob[],Blob*[])::arr","Target":"Blob","Mores":"{\"cpp.rel.raw_text\":\"Blob\\u003cint\\u003e\"}","IsSource":false}
+{"QN":"tpl_array(Blob[],Blob*[])::ptrs","Type":"TYPE_ARG","Source":"tpl_array(Blob[],Blob*[])::ptrs","Target":"Blob","Mores":"{\"cpp.rel.raw_text\":\"Blob\\u003cint\\u003e\"}","IsSource":false}
+{"QN":"tpl_param(const Blob\u0026,Blob*,Blob\u0026\u0026)","Type":"CONTAIN","Source":"tpl_param(const Blob\u0026,Blob*,Blob\u0026\u0026)","Target":"tpl_param(const Blob\u0026,Blob*,Blob\u0026\u0026)::b","Mores":"null","IsSource":false}
+{"QN":"tpl_param(const Blob\u0026,Blob*,Blob\u0026\u0026)","Type":"CONTAIN","Source":"tpl_param(const Blob\u0026,Blob*,Blob\u0026\u0026)","Target":"tpl_param(const Blob\u0026,Blob*,Blob\u0026\u0026)::pb","Mores":"null","IsSource":false}
+{"QN":"tpl_param(const Blob\u0026,Blob*,Blob\u0026\u0026)","Type":"CONTAIN","Source":"tpl_param(const Blob\u0026,Blob*,Blob\u0026\u0026)","Target":"tpl_param(const Blob\u0026,Blob*,Blob\u0026\u0026)::rb","Mores":"null","IsSource":false}
+{"QN":"tpl_param(const Blob\u0026,Blob*,Blob\u0026\u0026)","Type":"PARAMETER","Source":"tpl_param(const Blob\u0026,Blob*,Blob\u0026\u0026)","Target":"Blob","Mores":"{\"cpp.rel.raw_text\":\"Blob\\u003cDtype\\u003e* pb\"}","IsSource":false}
+{"QN":"tpl_param(const Blob\u0026,Blob*,Blob\u0026\u0026)","Type":"PARAMETER","Source":"tpl_param(const Blob\u0026,Blob*,Blob\u0026\u0026)","Target":"Blob","Mores":"{\"cpp.rel.raw_text\":\"Blob\\u003cDtype\\u003e\\u0026\\u0026 rb\"}","IsSource":false}
+{"QN":"tpl_param(const Blob\u0026,Blob*,Blob\u0026\u0026)","Type":"PARAMETER","Source":"tpl_param(const Blob\u0026,Blob*,Blob\u0026\u0026)","Target":"Blob","Mores":"{\"cpp.rel.raw_text\":\"const Blob\\u003cDtype\\u003e\\u0026 b\"}","IsSource":false}
+{"QN":"tpl_param(const Blob\u0026,Blob*,Blob\u0026\u0026)::b","Type":"TYPE_ARG","Source":"tpl_param(const Blob\u0026,Blob*,Blob\u0026\u0026)::b","Target":"Blob","Mores":"{\"cpp.rel.raw_text\":\"Blob\\u003cDtype\\u003e\"}","IsSource":false}
+{"QN":"tpl_param(const Blob\u0026,Blob*,Blob\u0026\u0026)::pb","Type":"TYPE_ARG","Source":"tpl_param(const Blob\u0026,Blob*,Blob\u0026\u0026)::pb","Target":"Blob","Mores":"{\"cpp.rel.raw_text\":\"Blob\\u003cDtype\\u003e\"}","IsSource":false}
+{"QN":"tpl_param(const Blob\u0026,Blob*,Blob\u0026\u0026)::rb","Type":"TYPE_ARG","Source":"tpl_param(const Blob\u0026,Blob*,Blob\u0026\u0026)::rb","Target":"Blob","Mores":"{\"cpp.rel.raw_text\":\"Blob\\u003cDtype\\u003e\"}","IsSource":false}
 {"QN":"trailing(int)","Type":"CONTAIN","Source":"trailing(int)","Target":"trailing(int)::v","Mores":"null","IsSource":false}
 {"QN":"trailing(int)","Type":"USE","Source":"trailing(int)","Target":"trailing(int)::v","Location":"collector/cpp/function/fn.cpp:23","Mores":"{\"cpp.rel.ast_kind\":\"identifier\",\"cpp.rel.raw_text\":\"v\"}","IsSource":false}
 {"QN":"ty","Type":"CONTAIN","Source":"ty","Target":"collector/cpp/display/display_types.cpp","Mores":"null","IsSource":false}
@@ -4062,15 +4283,15 @@
 {"QN":"use_all()","Type":"USE","Source":"use_all()","Target":"outer::middle::inner::Deep::d","Location":"collector/cpp/namespace/ns.cpp:45","Mores":"{\"cpp.rel.ast_kind\":\"field_expression\",\"cpp.rel.raw_text\":\"d.d\"}","IsSource":false}
 {"QN":"use_all()","Type":"USE","Source":"use_all()","Target":"use_all()::d","Location":"collector/cpp/namespace/ns.cpp:45","Mores":"{\"cpp.rel.ast_kind\":\"field_expression\",\"cpp.rel.raw_text\":\"e.d\"}","IsSource":false}
 {"QN":"use_all()::d","Type":"TYPE_ARG","Source":"use_all()::d","Target":"outer::middle::inner::Deep","Mores":"{\"cpp.rel.raw_text\":\"Deep\"}","IsSource":false}
-{"QN":"use_macros()","Type":"ASSIGN","Source":"use_macros()","Target":"use_macros()::v","Location":"collector/cpp/macro/mac.cpp:40","Mores":"{\"cpp.rel.assign.is_initializer\":true,\"cpp.rel.ast_kind\":\"init_declarator\",\"cpp.rel.raw_text\":\"v\"}","IsSource":false}
-{"QN":"use_macros()","Type":"ASSIGN","Source":"use_macros()","Target":"use_macros()::v","Location":"collector/cpp/macro/mac.cpp:41","Mores":"{\"cpp.rel.assign.operator\":\"=\",\"cpp.rel.ast_kind\":\"assignment_expression\",\"cpp.rel.raw_text\":\"v\"}","IsSource":false}
-{"QN":"use_macros()","Type":"ASSIGN","Source":"use_macros()","Target":"use_macros()::v","Location":"collector/cpp/macro/mac.cpp:42","Mores":"{\"cpp.rel.assign.operator\":\"=\",\"cpp.rel.ast_kind\":\"assignment_expression\",\"cpp.rel.raw_text\":\"v\"}","IsSource":false}
+{"QN":"use_macros()","Type":"ASSIGN","Source":"use_macros()","Target":"use_macros()::v","Location":"collector/cpp/macro/mac.cpp:49","Mores":"{\"cpp.rel.assign.is_initializer\":true,\"cpp.rel.ast_kind\":\"init_declarator\",\"cpp.rel.raw_text\":\"v\"}","IsSource":false}
+{"QN":"use_macros()","Type":"ASSIGN","Source":"use_macros()","Target":"use_macros()::v","Location":"collector/cpp/macro/mac.cpp:50","Mores":"{\"cpp.rel.assign.operator\":\"=\",\"cpp.rel.ast_kind\":\"assignment_expression\",\"cpp.rel.raw_text\":\"v\"}","IsSource":false}
+{"QN":"use_macros()","Type":"ASSIGN","Source":"use_macros()","Target":"use_macros()::v","Location":"collector/cpp/macro/mac.cpp:51","Mores":"{\"cpp.rel.assign.operator\":\"=\",\"cpp.rel.ast_kind\":\"assignment_expression\",\"cpp.rel.raw_text\":\"v\"}","IsSource":false}
 {"QN":"use_macros()","Type":"CONTAIN","Source":"use_macros()","Target":"use_macros()::v","Mores":"null","IsSource":false}
-{"QN":"use_macros()","Type":"USE","Source":"use_macros()","Target":"use_macros()::v","Location":"collector/cpp/macro/mac.cpp:41","Mores":"{\"cpp.rel.ast_kind\":\"identifier\",\"cpp.rel.raw_text\":\"v\"}","IsSource":false}
-{"QN":"use_macros()","Type":"USE","Source":"use_macros()","Target":"use_macros()::v","Location":"collector/cpp/macro/mac.cpp:41","Mores":"{\"cpp.rel.ast_kind\":\"identifier\",\"cpp.rel.raw_text\":\"v\"}","IsSource":false}
-{"QN":"use_macros()","Type":"USE","Source":"use_macros()","Target":"use_macros()::v","Location":"collector/cpp/macro/mac.cpp:42","Mores":"{\"cpp.rel.ast_kind\":\"identifier\",\"cpp.rel.raw_text\":\"v\"}","IsSource":false}
-{"QN":"use_macros()","Type":"USE","Source":"use_macros()","Target":"use_macros()::v","Location":"collector/cpp/macro/mac.cpp:42","Mores":"{\"cpp.rel.ast_kind\":\"identifier\",\"cpp.rel.raw_text\":\"v\"}","IsSource":false}
-{"QN":"use_macros()","Type":"USE","Source":"use_macros()","Target":"use_macros()::v","Location":"collector/cpp/macro/mac.cpp:43","Mores":"{\"cpp.rel.ast_kind\":\"identifier\",\"cpp.rel.raw_text\":\"v\"}","IsSource":false}
+{"QN":"use_macros()","Type":"USE","Source":"use_macros()","Target":"use_macros()::v","Location":"collector/cpp/macro/mac.cpp:50","Mores":"{\"cpp.rel.ast_kind\":\"identifier\",\"cpp.rel.raw_text\":\"v\"}","IsSource":false}
+{"QN":"use_macros()","Type":"USE","Source":"use_macros()","Target":"use_macros()::v","Location":"collector/cpp/macro/mac.cpp:50","Mores":"{\"cpp.rel.ast_kind\":\"identifier\",\"cpp.rel.raw_text\":\"v\"}","IsSource":false}
+{"QN":"use_macros()","Type":"USE","Source":"use_macros()","Target":"use_macros()::v","Location":"collector/cpp/macro/mac.cpp:51","Mores":"{\"cpp.rel.ast_kind\":\"identifier\",\"cpp.rel.raw_text\":\"v\"}","IsSource":false}
+{"QN":"use_macros()","Type":"USE","Source":"use_macros()","Target":"use_macros()::v","Location":"collector/cpp/macro/mac.cpp:51","Mores":"{\"cpp.rel.ast_kind\":\"identifier\",\"cpp.rel.raw_text\":\"v\"}","IsSource":false}
+{"QN":"use_macros()","Type":"USE","Source":"use_macros()","Target":"use_macros()::v","Location":"collector/cpp/macro/mac.cpp:52","Mores":"{\"cpp.rel.ast_kind\":\"identifier\",\"cpp.rel.raw_text\":\"v\"}","IsSource":false}
 {"QN":"use_ref()","Type":"CONTAIN","Source":"use_ref()","Target":"use_ref()::local","Mores":"null","IsSource":false}
 {"QN":"use_ref()","Type":"CONTAIN","Source":"use_ref()","Target":"use_ref()::ptr","Mores":"null","IsSource":false}
 {"QN":"use_ref()::local","Type":"TYPE_ARG","Source":"use_ref()::local","Target":"RefTarget","Mores":"{\"cpp.rel.raw_text\":\"struct RefTarget\"}","IsSource":false}
