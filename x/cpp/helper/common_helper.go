@@ -91,6 +91,41 @@ func StripTemplateArgs(s string) string {
 	return strings.TrimSpace(s[:start])
 }
 
+// StripTemplateArgsKeepSuffix 剥离类型文本中的模板实参，保留其后的后缀。
+// 与 StripTemplateArgs 的区别：后者遇到首个 `<` 即截断，会丢掉 `*`/`&`/`[]`
+// 等后缀；本函数只删除配对的 `<...>` 片段。
+// 例：Blob<Dtype>* -> Blob*；const vector<Datum>& -> const vector&；
+//
+//	std::map<int,std::vector<float>> -> std::map。
+func StripTemplateArgsKeepSuffix(s string) string {
+	if !strings.Contains(s, "<") || !strings.Contains(s, ">") {
+		return s
+	}
+	var sb strings.Builder
+	depth := 0
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case '<':
+			depth++
+		case '>':
+			if depth > 0 {
+				depth--
+			} else {
+				sb.WriteByte(s[i])
+			}
+		default:
+			if depth == 0 {
+				sb.WriteByte(s[i])
+			}
+		}
+	}
+	// 尖括号不配平（如 operator<、a < b）：不是模板实参，原样返回。
+	if depth != 0 {
+		return s
+	}
+	return strings.TrimSpace(sb.String())
+}
+
 // PkgOf 返回 QN 的命名空间前缀（按 :: 切分，去掉最后一段）。
 // 全局符号（无 ::）返回空。
 func PkgOf(qn string) string {

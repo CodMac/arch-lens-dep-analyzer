@@ -1,0 +1,229 @@
+package preproc
+
+import (
+	"bytes"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+func loadFixture(t *testing.T, name string) []byte {
+	t.Helper()
+	p := filepath.Join("..", "testdata", "preproc", name)
+	b, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatalf("read fixture %s: %v", name, err)
+	}
+	return b
+}
+
+// TestProjectLengthPreserved 投影必须等长（Location 不变的前提）。
+func TestProjectLengthPreserved(t *testing.T) {
+	for _, name := range []string{
+		"split_args.cpp", "has_include.cpp", "if_zero.cpp",
+		"member_init.cpp", "nested.cpp", "guard.h", "macro_class.h",
+	} {
+		src := loadFixture(t, name)
+		res := Project(src)
+		if len(res.Source) != len(src) {
+			t.Errorf("%s: length changed %d -> %d", name, len(src), len(res.Source))
+		}
+	}
+}
+
+// TestProjectLineStructurePreserved 投影后行数与每行长度必须不变。
+func TestProjectLineStructurePreserved(t *testing.T) {
+	src := loadFixture(t, "split_args.cpp")
+	res := Project(src)
+	origLines := bytes.Split(src, []byte("\n"))
+	newLines := bytes.Split(res.Source, []byte("\n"))
+	if len(origLines) != len(newLines) {
+		t.Fatalf("line count changed %d -> %d", len(origLines), len(newLines))
+	}
+	for i := range origLines {
+		if len(origLines[i]) != len(newLines[i]) {
+			t.Fatalf("line %d length changed %d -> %d", i+1, len(origLines[i]), len(newLines[i]))
+		}
+	}
+}
+
+// TestSplitArgs 跨 #ifdef 的函数实参：投影后括号必须平衡。
+func TestSplitArgs(t *testing.T) {
+	src := loadFixture(t, "split_args.cpp")
+	res := Project(src)
+
+	if got := bracketBalance(res.Source, 0, len(res.Source)); got != 0 {
+		t.Errorf("projected source unbalanced: %d", got)
+	}
+	// 首分支（_WIN32）被选中，static_cast 保留，ptr, size 被置空。
+	if !bytes.Contains(res.Source, []byte("static_cast<char *>(ptr)")) {
+		t.Errorf("chosen branch content missing")
+	}
+	if bytes.Contains(res.Source, []byte("ptr, size,")) {
+		t.Errorf("dropped branch content still present")
+	}
+	if len(res.Dropped) == 0 {
+		t.Errorf("expected dropped branch recorded")
+	}
+}
+
+// TestIfZeroDropped #if 0 整组丢弃。
+func TestIfZeroDropped(t *testing.T) {
+	src := loadFixture(t, "if_zero.cpp")
+	res := Project(src)
+	if bytes.Contains(res.Source, []byte("dead_function")) {
+		t.Errorf("#if 0 body should be blanked")
+	}
+	if !bytes.Contains(res.Source, []byte("live_function")) {
+		t.Errorf("live function should survive")
+	}
+}
+
+// TestHasInclude 无法静态判定的条件选首分支。
+func TestHasInclude(t *testing.T) {
+	src := loadFixture(t, "has_include.cpp")
+	res := Project(src)
+	if got := bracketBalance(res.Source, 0, len(res.Source)); got != 0 {
+		t.Errorf("unbalanced: %d", got)
+	}
+	if !bytes.Contains(res.Source, []byte("namespace demo")) {
+		t.Errorf("namespace lost")
+	}
+}
+
+// TestMemberInit 构造器初始化列表跨分支。
+func TestMemberInit(t *testing.T) {
+	src := loadFixture(t, "member_init.cpp")
+	res := Project(src)
+	if got := bracketBalance(res.Source, 0, len(res.Source)); got != 0 {
+		t.Errorf("unbalanced: %d", got)
+	}
+	if !bytes.Contains(res.Source, []byte("session(other.session)")) {
+		t.Errorf("chosen member init missing")
+	}
+}
+
+// TestNested 嵌套条件逐组独立决策。
+func TestNested(t *testing.T) {
+	src := loadFixture(t, "nested.cpp")
+	res := Project(src)
+	if got := bracketBalance(res.Source, 0, len(res.Source)); got != 0 {
+		t.Errorf("unbalanced: %d", got)
+	}
+	if len(res.Regions) == 0 {
+		t.Errorf("expected chosen regions")
+	}
+}
+
+// TestGuard 包含守卫：选守卫体，#else 丢弃。
+func TestGuard(t *testing.T) {
+	src := loadFixture(t, "guard.h")
+	res := Project(src)
+	if !bytes.Contains(res.Source, []byte("class Guarded")) {
+		t.Errorf("guarded body missing")
+	}
+	if bytes.Contains(res.Source, []byte("class Fallback")) {
+		t.Errorf("#else body should be blanked")
+	}
+}
+
+// TestMacroClass 类型注解宏归一化。
+func TestMacroClass(t *testing.T) {
+	src := loadFixture(t, "macro_class.h")
+	res := Project(src)
+	if len(res.MacroAnns) == 0 {
+		t.Fatalf("expected macro annotation recorded")
+	}
+	if res.MacroAnns[0].Macro != "GTEST_API_" || res.MacroAnns[0].Type != "Test" {
+		t.Errorf("unexpected ann: %+v", res.MacroAnns[0])
+	}
+	if bytes.Contains(res.Source, []byte("GTEST_API_")) {
+		t.Errorf("macro token should be blanked")
+	}
+	if !bytes.Contains(res.Source, []byte("class")) || !bytes.Contains(res.Source, []byte("Test {")) {
+		t.Errorf("class declaration should remain recognizable")
+	}
+}
+
+// TestKeepIncludes 未选中分支中的 #include 默认保留。
+func TestKeepIncludes(t *testing.T) {
+	src := loadFixture(t, "has_include.cpp")
+	withKeep := ProjectWithOptions(src, Options{Pass: PassFirst, KeepIncludes: true})
+	withoutKeep := ProjectWithOptions(src, Options{Pass: PassFirst, KeepIncludes: false})
+	// #else 分支（未选中）中的 include 应保留 / 可关闭。
+	if !bytes.Contains(withKeep.Source, []byte("sys/un.h")) {
+		t.Errorf("include in dropped branch should be kept")
+	}
+	if bytes.Contains(withoutKeep.Source, []byte("sys/un.h")) {
+		t.Errorf("include should be blanked when KeepIncludes=false")
+	}
+}
+
+// TestKeepMultilineMacro 未选中分支中的多行宏必须整组保留（含续行）。
+// 只保留首行会留下悬挂的 `\`，把后续行乃至 #endif 吞进宏体，条件组永不闭合。
+func TestKeepMultilineMacro(t *testing.T) {
+	src := []byte("#ifdef A\nint a;\n#else\n#define M(x) \\\n  ((x) + 1)\n#endif\nint tail;\n")
+	res := Project(src)
+	if got := bracketBalance(res.Source, 0, len(res.Source)); got != 0 {
+		t.Errorf("unbalanced: %d", got)
+	}
+	if !bytes.Contains(res.Source, []byte("((x) + 1)")) {
+		t.Errorf("continuation lines of kept macro should be preserved")
+	}
+	if !bytes.Contains(res.Source, []byte("int tail;")) {
+		t.Errorf("code after #endif should survive")
+	}
+}
+
+// TestBlankMultilineDirective 未选中分支中的多行指令（如多行 #if 条件）必须整组置空。
+func TestBlankMultilineDirective(t *testing.T) {
+	src := []byte("#if defined(A) || \\\n    defined(B)\nint x;\n#endif\nint y;\n")
+	res := Project(src)
+	if got := bracketBalance(res.Source, 0, len(res.Source)); got != 0 {
+		t.Errorf("unbalanced: %d", got)
+	}
+	if bytes.Contains(res.Source, []byte("defined(B)")) {
+		t.Errorf("continuation line of directive should be blanked")
+	}
+	if !bytes.Contains(res.Source, []byte("int y;")) {
+		t.Errorf("code after #endif should survive")
+	}
+}
+
+// TestPassLast 末分支策略（分支回补用）。
+func TestPassLast(t *testing.T) {
+	src := loadFixture(t, "split_args.cpp")
+	first := ProjectWithOptions(src, Options{Pass: PassFirst, KeepIncludes: true})
+	last := ProjectWithOptions(src, Options{Pass: PassLast, KeepIncludes: true})
+	if bytes.Equal(first.Source, last.Source) {
+		t.Errorf("first/last passes should differ")
+	}
+	if !bytes.Contains(last.Source, []byte("ptr, size,")) {
+		t.Errorf("last pass should choose #else branch")
+	}
+}
+
+// TestDirectiveInCommentIgnored 注释中的 #if 不参与配对。
+func TestDirectiveInCommentIgnored(t *testing.T) {
+	src := []byte("// #if 0\n/* #endif */\nint x;\n")
+	res := Project(src)
+	if len(res.Regions) != 0 || len(res.Dropped) != 0 {
+		t.Errorf("comment directives should be ignored, got regions=%d dropped=%d", len(res.Regions), len(res.Dropped))
+	}
+	if !bytes.Contains(res.Source, []byte("int x;")) {
+		t.Errorf("code should be untouched")
+	}
+}
+
+// TestUnbalancedFallback 所有分支都不平衡时回退首分支。
+func TestUnbalancedFallback(t *testing.T) {
+	src := []byte("#ifdef A\n{\n#else\n}\n#endif\n")
+	res := Project(src)
+	if len(res.Source) != len(src) {
+		t.Fatalf("length changed")
+	}
+	if !strings.Contains(string(res.Source), "{") {
+		t.Errorf("fallback should choose first branch")
+	}
+}

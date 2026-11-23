@@ -9,6 +9,7 @@ package context
 import (
 	"github.com/CodMac/arch-lens-dep-analyer/core"
 	coreast "github.com/CodMac/arch-lens-dep-analyer/core/ast"
+	"github.com/CodMac/arch-lens-dep-analyer/x/cpp/preproc"
 )
 
 // NamespaceAware 是 C/C++ 专属的可选能力接口：
@@ -23,11 +24,28 @@ type NamespaceAware interface {
 	SetNamespaces(ns []string)
 }
 
+// ActionRoots 汇总动作提取需要遍历的全部语法树根节点。
+//
+// 条件编译投影只保留每组一个分支，投影树无法覆盖 #elif/#else 与嵌套分支；
+// 原始树（保留 preproc_* 节点）与分支回补树可补足。三棵树共享同一套字节坐标
+// （投影等长），因此 Extractor 可按 (RelType, StartByte, EndByte) 去重。
+type ActionRoots struct {
+	// Primary 主树（投影树；退化时为原始树）。
+	Primary coreast.Node
+	// Raw 原始树（全分支），退化或不可用时为 nil。
+	Raw coreast.Node
+	// Alts 分支回补树（仅当原始树有 ERROR 时存在）。
+	Alts []coreast.Node
+	// Dead #if 0 死区区间（按 Start 升序），死区内的动作不产关系。
+	Dead []preproc.Region
+}
+
 // FileContext 是 C/C++ 的文件上下文：在通用实现之上增加命名空间列表。
 type FileContext struct {
 	*core.BaseFileContext
 
-	namespaces []string
+	namespaces  []string
+	actionRoots ActionRoots
 }
 
 // NewFileContext 创建 C/C++ 文件上下文。
@@ -42,3 +60,9 @@ func (fc *FileContext) Namespaces() []string { return fc.namespaces }
 
 // SetNamespaces 设置命名空间列表。
 func (fc *FileContext) SetNamespaces(ns []string) { fc.namespaces = ns }
+
+// SetActionRoots 设置动作提取需要遍历的语法树根节点。
+func (fc *FileContext) SetActionRoots(r ActionRoots) { fc.actionRoots = r }
+
+// ActionRoots 返回动作提取需要遍历的语法树根节点。
+func (fc *FileContext) ActionRoots() ActionRoots { return fc.actionRoots }

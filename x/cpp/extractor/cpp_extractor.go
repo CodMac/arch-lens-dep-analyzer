@@ -11,7 +11,9 @@ import (
 	coreast "github.com/CodMac/arch-lens-dep-analyer/core/ast"
 	"github.com/CodMac/arch-lens-dep-analyer/model"
 	"github.com/CodMac/arch-lens-dep-analyer/x/cpp/constants"
+	cppctx "github.com/CodMac/arch-lens-dep-analyer/x/cpp/context"
 	"github.com/CodMac/arch-lens-dep-analyer/x/cpp/helper"
+	"github.com/CodMac/arch-lens-dep-analyer/x/cpp/preproc"
 )
 
 // Extractor 实现 core.Extractor。
@@ -311,13 +313,67 @@ type actionCtx struct {
 	fCtx     core.FileContext
 	gc       core.GlobalContext
 	rels     []*model.DependencyRelation
+	// seen 动作节点去重键。投影等长 → 同一处源码在多棵树中字节坐标相同，
+	// 按 (RelType, StartByte, EndByte) 去重即可避免重复关系。
+	seen map[actionKey]bool
+	// deadRegions #if 0 死区（按 Start 升序），死区内的动作不产关系。
+	deadRegions []preproc.Region
 }
 
-// extractActions 遍历 AST 提取动作关系。
+// actionKey 动作节点去重键。
+type actionKey struct {
+	relType   model.DependencyType
+	startByte int
+	endByte   int
+}
+
+// extractActions 遍历全部语法树提取动作关系。
+//
+// 投影树只覆盖每组一个分支；原始树（保留 preproc_* 节点）与分支回补树补足
+// 其余分支。三棵树共享字节坐标，按 actionKey 去重。
 func (e *Extractor) extractActions(fCtx core.FileContext, gc core.GlobalContext) []*model.DependencyRelation {
-	ac := &actionCtx{resolver: e.resolver, fCtx: fCtx, gc: gc}
-	ac.walk(fCtx.Root())
+	ac := &actionCtx{
+		resolver: e.resolver,
+		fCtx:     fCtx,
+		gc:       gc,
+		seen:     make(map[actionKey]bool),
+	}
+
+	roots := []coreast.Node{fCtx.Root()}
+	if ar, ok := fCtx.(interface{ ActionRoots() cppctx.ActionRoots }); ok {
+		r := ar.ActionRoots()
+		if r.Primary != nil {
+			roots = []coreast.Node{r.Primary}
+		}
+		if r.Raw != nil {
+			roots = append(roots, r.Raw)
+		}
+		roots = append(roots, r.Alts...)
+		ac.deadRegions = r.Dead
+	}
+
+	for _, root := range roots {
+		ac.walk(root)
+	}
 	return ac.rels
+}
+
+// inDeadZone 判断节点是否**完全**落在 #if 0 死区内。
+// 与 Collector 同口径：错误恢复会产出跨区 ERROR 节点，只看起点会误判。
+func (ac *actionCtx) inDeadZone(node coreast.Node) bool {
+	if len(ac.deadRegions) == 0 {
+		return false
+	}
+	start, end := node.StartByte(), node.EndByte()
+	for _, r := range ac.deadRegions {
+		if start < r.Start {
+			break
+		}
+		if start >= r.Start && end <= r.End {
+			return true
+		}
+	}
+	return false
 }
 
 func (ac *actionCtx) walk(node coreast.Node) {
@@ -357,6 +413,16 @@ func (ac *actionCtx) add(relType model.DependencyType, source, target *model.Cod
 	if source.QualifiedName == target.QualifiedName {
 		return
 	}
+	// #if 0 死区内的动作不产关系。
+	if ac.inDeadZone(node) {
+		return
+	}
+	// 多树遍历去重：同一处源码在多棵树中字节坐标相同，只保留首条。
+	k := actionKey{relType: relType, startByte: node.StartByte(), endByte: node.EndByte()}
+	if ac.seen[k] {
+		return
+	}
+	ac.seen[k] = true
 	rel := &model.DependencyRelation{
 		Type:     relType,
 		Source:   source,

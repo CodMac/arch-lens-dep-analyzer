@@ -32,6 +32,15 @@
 #define FEATURE_VAL 0
 #endif
 
+/* 命名空间 / 函数体内的宏：QN 仍是裸宏名，不加作用域前缀 */
+namespace macro_ns {
+#define NS_MACRO 1
+}
+
+void macro_in_func() {
+#define FUNC_SCOPED_MACRO 2
+}
+
 /* #undef 不产元素 */
 #undef OBJ_MACRO
 

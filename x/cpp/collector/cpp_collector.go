@@ -4,7 +4,8 @@
 // C/C++ 与 Java 的关键差异：
 //   - QN 分隔符为 ::（namespace/类/方法层级）
 //   - 声明与定义分离（FUNCTION_DECL/METHOD_DECL 与 FUNCTION/METHOD 成对）
-//   - 条件编译分支全保留，元素记 cpp.condition
+//   - 条件编译在 Parser 层做「投影」：未选中分支按字节置空格（等长），
+//     AST 中只保留一条语法完整的分支；条件标签由投影区间回填 cpp.condition
 //   - 匿名 struct 不产独立元素，字段挂承载实体
 package collector
 
@@ -20,23 +21,29 @@ import (
 	"github.com/CodMac/arch-lens-dep-analyer/x/cpp/constants"
 	cppctx "github.com/CodMac/arch-lens-dep-analyer/x/cpp/context"
 	"github.com/CodMac/arch-lens-dep-analyer/x/cpp/helper"
+	"github.com/CodMac/arch-lens-dep-analyer/x/cpp/preproc"
 )
 
 // Collector 实现 core.Collector。
 type Collector struct {
 	resolver core.SymbolResolver
 
-	// condStacks 条件编译分支栈：文件路径 -> (条件节点起始字节 -> 条件标签)。
-	// 引擎按文件并行调用 CollectDefinitions，故需加锁保护。
-	mu         sync.Mutex
-	condStacks map[string]map[int]string
+	// condRegions 条件编译分支区间：文件路径 -> 被选中的分支区间（按 Start 升序）。
+	// 由 Parser 的预处理投影产出：AST 中已不存在 preproc_ifdef 节点，
+	// 条件标签只能从投影结果回填。引擎按文件并行调用 CollectDefinitions，故需加锁。
+	mu          sync.Mutex
+	condRegions map[string][]preproc.Region
+	// deadRegions #if 0 死区区间：文件路径 -> 死区（按 Start 升序）。
+	// 原始树保留死区代码，需据此跳过其元素。
+	deadRegions map[string][]preproc.Region
 }
 
 // New 创建 C/C++ Collector。
 func New(resolver core.SymbolResolver) *Collector {
 	return &Collector{
-		resolver:   resolver,
-		condStacks: make(map[string]map[int]string),
+		resolver:    resolver,
+		condRegions: make(map[string][]preproc.Region),
+		deadRegions: make(map[string][]preproc.Region),
 	}
 }
 
@@ -67,12 +74,52 @@ func (c *Collector) CollectDefinitions(src coreast.SourceFile) (core.FileContext
 	// Step 0: 文件自身元素
 	c.initFileElem(fCtx)
 
+	// 条件编译区间：由 Parser 的投影结果提供（AST 中已无 preproc_* 节点）。
+	//
+	// 未选中分支的代码已被置空，但其中的 #include/#define/#undef/#pragma 仍被保留
+	// （见 preproc.KeepIncludes），这些行仍会产出元素，因此 Dropped 区间也要参与
+	// 条件标签回填，否则保留下来的宏/导入会丢失 cpp.condition。
+	if ps, ok := src.(interface{ Preproc() *preproc.Result }); ok {
+		if proj := ps.Preproc(); proj != nil {
+			regions := make([]preproc.Region, 0, len(proj.Regions)+len(proj.Dropped))
+			regions = append(regions, proj.Regions...)
+			regions = append(regions, proj.Dropped...)
+			if len(regions) > 0 {
+				c.setCondRegions(path, regions)
+			}
+			if len(proj.Dead) > 0 {
+				c.setDeadRegions(path, proj.Dead)
+			}
+		}
+	}
+
 	// Step 1: 顶层声明（#include）
 	c.processTopLevelDeclarations(fCtx)
 
 	// Step 2: 递归收集定义
 	nameOccurrence := make(map[string]int)
 	c.collectBasicDefinitions(root, fCtx, "", "", nameOccurrence)
+
+	// Step 2b: 原始树补元素。投影树只保留每组一个分支，嵌套/其余分支的符号
+	// 不在其中；原始树保留 preproc_* 节点与全部分支体，可补齐。
+	// AddDefinition 按 QN+Kind 幂等，重复符号自动忽略。
+	// 条件标签无需切换：首遍的 Regions/Dropped 区间已覆盖全部分支。
+	var rawRoot coreast.Node
+	if rp, ok := src.(interface{ RawRoot() coreast.Node }); ok {
+		rawRoot = rp.RawRoot()
+		if rawRoot != nil {
+			c.collectBasicDefinitions(rawRoot, fCtx, "", "", make(map[string]int))
+		}
+	}
+
+	// Step 2c: 分支回补。仅当原始树不可用（有 ERROR）时才有补充树。
+	if ap, ok := src.(interface{ AltRoots() []coreast.Node }); ok {
+		for _, altRoot := range ap.AltRoots() {
+			if altRoot != nil {
+				c.collectBasicDefinitions(altRoot, fCtx, "", "", make(map[string]int))
+			}
+		}
+	}
 
 	// Step 3: 元数据增强
 	c.enrichMetadata(fCtx)
@@ -82,6 +129,19 @@ func (c *Collector) CollectDefinitions(src coreast.SourceFile) (core.FileContext
 
 	// Step 5: 展示层字段（NamespaceQN / EnclosingQN / TypeQN）
 	c.fillDisplayFields(fCtx)
+
+	// Step 6: 暴露动作提取需要的全部语法树根节点。
+	// Extractor 阶段拿不到 SourceFile，只能经由 FileContext 取树。
+	roots := cppctx.ActionRoots{Primary: fCtx.Root(), Raw: rawRoot}
+	if ap, ok := src.(interface{ AltRoots() []coreast.Node }); ok {
+		roots.Alts = ap.AltRoots()
+	}
+	if ps, ok := src.(interface{ Preproc() *preproc.Result }); ok {
+		if proj := ps.Preproc(); proj != nil {
+			roots.Dead = proj.Dead
+		}
+	}
+	fCtx.SetActionRoots(roots)
 
 	c.releaseCondStack(fCtx.FilePath())
 	return fCtx, nil
@@ -319,7 +379,9 @@ func (c *Collector) walkIncludes(node coreast.Node, fCtx core.FileContext) {
 		return
 	}
 	if node.Kind() == "preproc_include" {
-		c.handleInclude(node, fCtx)
+		if !c.inDeadZone(fCtx.FilePath(), node) {
+			c.handleInclude(node, fCtx)
+		}
 		return
 	}
 	for i := 0; i < node.ChildCount(); i++ {
@@ -366,15 +428,14 @@ func (c *Collector) collectBasicDefinitions(node coreast.Node, fCtx core.FileCon
 	}
 	src := *fCtx.SourceBytes()
 
-	// 条件编译：进入分支时压栈（#elif/#else 作为 alternative 子节点自然内层优先）。
-	if cond := conditionFor(node, src); cond != "" {
-		c.pushCond(fCtx.FilePath(), node.StartByte(), cond)
-		defer c.popCond(fCtx.FilePath(), node.StartByte())
-	}
-
 	// friend 声明（friend void f(); / friend class X;）不是成员定义/声明，
 	// 不产元素；其内部 declaration 也不应挂到当前类下。
 	if node.Kind() == "friend_declaration" {
+		return
+	}
+
+	// #if 0 死区：原始树会保留死区代码，跳过其元素。
+	if node.IsNamed() && c.inDeadZone(fCtx.FilePath(), node) {
 		return
 	}
 
@@ -498,78 +559,68 @@ func resolveRelativeQN(full, currentQN string) string {
 // 条件编译栈
 // =============================================================================
 
-func (c *Collector) pushCond(path string, start int, cond string) {
+func (c *Collector) setCondRegions(path string, regions []preproc.Region) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	s, ok := c.condStacks[path]
-	if !ok {
-		s = make(map[int]string)
-		c.condStacks[path] = s
-	}
-	s[start] = cond
+	c.condRegions[path] = regions
 }
 
-func (c *Collector) popCond(path string, start int) {
+func (c *Collector) setDeadRegions(path string, regions []preproc.Region) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if s, ok := c.condStacks[path]; ok {
-		delete(s, start)
-	}
+	c.deadRegions[path] = regions
 }
 
 func (c *Collector) releaseCondStack(path string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	delete(c.condStacks, path)
+	delete(c.condRegions, path)
+	delete(c.deadRegions, path)
+}
+
+// inDeadZone 判断节点是否**完全**落在 #if 0 死区内。
+//
+// 必须要求完全包含：tree-sitter 的错误恢复会在死区边界产出跨区 ERROR 节点
+// （起点在死区内、终点在区外，可跨数百行），只看起点会把整段正常代码误判为死区。
+func (c *Collector) inDeadZone(path string, node coreast.Node) bool {
+	c.mu.Lock()
+	regions := c.deadRegions[path]
+	c.mu.Unlock()
+	if len(regions) == 0 {
+		return false
+	}
+	start, end := node.StartByte(), node.EndByte()
+	for _, r := range regions {
+		if start < r.Start {
+			break
+		}
+		if start >= r.Start && end <= r.End {
+			return true
+		}
+	}
+	return false
 }
 
 // activeCondition 返回节点所在的最内层条件编译分支标签。
+//
+// 投影后 AST 中不再有 preproc_ifdef 节点，条件标签来自 Parser 记录的
+// 「被选中分支区间」：取覆盖该节点起始字节、Depth 最大的区间。
 func (c *Collector) activeCondition(path string, node coreast.Node) string {
 	c.mu.Lock()
-	defer c.mu.Unlock()
-	s, ok := c.condStacks[path]
-	if !ok {
+	regions := c.condRegions[path]
+	c.mu.Unlock()
+	if len(regions) == 0 {
 		return ""
 	}
+	pos := node.StartByte()
 	best := ""
-	bestStart := -1
-	for start, cond := range s {
-		if start <= node.StartByte() && start > bestStart {
-			bestStart, best = start, cond
+	bestDepth := -1
+	for _, r := range regions {
+		if r.Start <= pos && pos < r.End && r.Depth > bestDepth {
+			best, bestDepth = r.Label, r.Depth
 		}
 	}
 	return best
-}
-
-// conditionFor 返回条件编译节点的标签（#ifdef X / #ifndef Y / #if C / #elif C / #else）。
-func conditionFor(node coreast.Node, src []byte) string {
-	switch node.Kind() {
-	case "preproc_ifdef":
-		kind := "#ifdef"
-		if node.Child(0) != nil && node.Child(0).Kind() == "#ifndef" {
-			kind = "#ifndef"
-		}
-		name := ""
-		if n := node.ChildByFieldName("name"); n != nil {
-			name = helper.GetNodeContent(n, src)
-		}
-		return kind + " " + name
-	case "preproc_if":
-		cond := ""
-		if n := node.ChildByFieldName("condition"); n != nil {
-			cond = helper.GetNodeContent(n, src)
-		}
-		return "#if " + cond
-	case "preproc_elif":
-		cond := ""
-		if n := node.ChildByFieldName("condition"); n != nil {
-			cond = helper.GetNodeContent(n, src)
-		}
-		return "#elif " + cond
-	case "preproc_else":
-		return "#else"
-	}
-	return ""
 }
 
 // =============================================================================
@@ -846,31 +897,48 @@ func (c *Collector) assignQN(it *identified, currentQN string, occurrences map[s
 			return
 		}
 	}
+	// 宏没有作用域语义：QN 固定为裸宏名（qn-format.md §8.1），
+	// 即使定义在 namespace/函数体内也不加前缀，ParentQN 留空。
+	if elem.Kind == model.Macro {
+		it.parentQN = ""
+		occurrences[elem.Name]++
+		if n := occurrences[elem.Name]; n > 1 {
+			elem.QualifiedName = fmt.Sprintf("%s$%d", elem.Name, n)
+		} else {
+			elem.QualifiedName = elem.Name
+		}
+		return
+	}
+
 	it.parentQN = currentQN
 
-	identity := elem.Name
+	// 函数/方法的消歧序号必须插在参数列表之前（apply$2(int,int)），
+	// 否则 QN 不再以参数列表结尾，会被误判为缺参数列表。
+	// 因此计数键用「名+签名」，序号只加在名字上。
+	name, suffix := elem.Name, ""
 	if isFunctionKind(elem.Kind) {
-		identity += it.sig
+		suffix = it.sig
 	}
 
 	// 声明与定义共享同一 QN：声明不参与同名重复计数，
 	// 否则同文件的 `int f(int); int f(int){}` 会被消歧成 f(int) / f(int)$2。
 	if it.isDecl {
-		elem.QualifiedName = c.resolver.BuildQualifiedName(currentQN, identity)
+		elem.QualifiedName = c.resolver.BuildQualifiedName(currentQN, name+suffix)
 		return
 	}
 
 	switch elem.Kind {
 	case model.Lambda, model.ScopeBlock:
 		occurrences[elem.Name]++
-		identity = fmt.Sprintf("%s$%d", elem.Name, occurrences[elem.Name])
+		name = fmt.Sprintf("%s$%d", elem.Name, occurrences[elem.Name])
 	default:
-		occurrences[identity]++
-		if occurrences[identity] > 1 {
-			identity = fmt.Sprintf("%s$%d", identity, occurrences[identity])
+		key := name + suffix
+		occurrences[key]++
+		if occurrences[key] > 1 {
+			name = fmt.Sprintf("%s$%d", name, occurrences[key])
 		}
 	}
-	elem.QualifiedName = c.resolver.BuildQualifiedName(currentQN, identity)
+	elem.QualifiedName = c.resolver.BuildQualifiedName(currentQN, name+suffix)
 }
 
 func isFunctionKind(k model.ElementKind) bool {
@@ -995,9 +1063,10 @@ func declaratorFullName(decl coreast.Node, src []byte) (string, bool) {
 		return declaratorFullName(decl.ChildByFieldName("name"), src)
 	case "operator_cast":
 		// 转换运算符（operator bool / operator int）：名称由 operator + 目标类型组成。
+		// 目标类型若是模板（operator ParamGenerator<T>），按 QN 契约剥离实参。
 		t := ""
 		if tn := decl.ChildByFieldName("type"); tn != nil {
-			t = normalizeTypeText(helper.GetNodeContent(tn, src))
+			t = normalizeParamType(helper.GetNodeContent(tn, src))
 		}
 		return normalizeTypeText("operator " + t), false
 	case "destructor_name", "operator_name", "field_identifier", "identifier", "type_identifier":
@@ -1023,15 +1092,15 @@ func normalizeDeclaredTypeName(nameNode coreast.Node, src []byte) string {
 
 // normalizeQualified 归一化限定名文本：去掉空白与各段的模板实参。
 // 例：app::Box<int>::run -> app::Box::run
+//
+// 必须先整体剥离模板实参再按 :: 切分：模板实参内部可能含 ::（如
+// Matcher<const std::string&>），先切分会把实参劈成两段，剥离失效。
 func normalizeQualified(s string) string {
 	s = strings.ReplaceAll(s, " ", "")
 	s = strings.ReplaceAll(s, "\t", "")
 	s = strings.ReplaceAll(s, "\n", "")
-	parts := strings.Split(s, helper.QNSep)
-	for i, p := range parts {
-		parts[i] = helper.StripTemplateArgs(p)
-	}
-	return strings.Join(parts, helper.QNSep)
+	s = helper.StripTemplateArgsKeepSuffix(s)
+	return s
 }
 
 // isMethodContext 判定函数是否属于类/结构体方法。
@@ -1100,7 +1169,7 @@ func paramSignature(decl coreast.Node, src []byte) string {
 	}
 	var types []string
 	for i := 0; i < pNode.NamedChildCount(); i++ {
-		t := paramTypeText(pNode.NamedChild(i), src)
+		t := paramTypeText(pNode.NamedChild(i), src, true)
 		if t == "" {
 			continue
 		}
@@ -1152,17 +1221,39 @@ func findFunctionDeclaratorInParens(paren coreast.Node) coreast.Node {
 }
 
 // paramTypeText 提取参数的类型文本（含 const/指针/引用/数组语义）。
-func paramTypeText(p coreast.Node, src []byte) string {
+// stripTpl 为 true 时剥离模板实参（用于 QN 签名）；为 false 时保留原文（用于展示）。
+func paramTypeText(p coreast.Node, src []byte, stripTpl bool) string {
 	if p == nil {
+		return ""
+	}
+	// 注释是具名节点，会出现在参数列表的 NamedChild 中，但不是参数。
+	if p.Kind() == "comment" {
 		return ""
 	}
 	if p.Kind() == "variadic_parameter" {
 		return "..."
 	}
+	norm := normalizeTypeText
+	if stripTpl {
+		norm = normalizeParamType
+	}
+	// 参数包展开（template <typename... T> void f(T... v)）：
+	// variadic_parameter_declaration 的 type 字段是包元素类型，声明器带 `...`。
+	// 签名按「包元素类型 + ...」记（T...），与 C 的 `...` 区分。
+	if p.Kind() == "variadic_parameter_declaration" {
+		t := ""
+		if tn := p.ChildByFieldName("type"); tn != nil {
+			t = helper.GetNodeContent(tn, src)
+		}
+		if decl := p.ChildByFieldName("declarator"); decl != nil {
+			t += declaratorTypeSuffix(decl)
+		}
+		return norm(t + "...")
+	}
 	// optional_parameter_declaration 是带默认实参的形参（int b = 2），
 	// 与 parameter_declaration 结构一致，但默认值不能进入 QN 签名。
 	if p.Kind() != "parameter_declaration" && p.Kind() != "optional_parameter_declaration" {
-		return normalizeTypeText(helper.GetNodeContent(p, src))
+		return norm(helper.GetNodeContent(p, src))
 	}
 	var parts []string
 	for i := 0; i < p.ChildCount(); i++ {
@@ -1182,7 +1273,7 @@ func paramTypeText(p coreast.Node, src []byte) string {
 			parts = append(parts, declaratorTypeSuffix(decl))
 		}
 	}
-	return normalizeTypeText(strings.Join(parts, " "))
+	return norm(strings.Join(parts, " "))
 }
 
 // declaratorTypeSuffix 返回声明器上的指针/引用/数组标记。
@@ -1237,6 +1328,7 @@ func countChildToken(decl coreast.Node, token string) int {
 }
 
 // normalizeTypeText 归一化类型文本：去掉 * & 前空格。
+// 用于记录「原文类型」的 Mores（raw type / underlying / 基类），保留模板实参。
 func normalizeTypeText(s string) string {
 	s = strings.TrimSpace(s)
 	s = strings.ReplaceAll(s, " *", "*")
@@ -1244,6 +1336,15 @@ func normalizeTypeText(s string) string {
 	s = strings.Join(strings.Fields(s), " ")
 	s = strings.ReplaceAll(s, " [", "[")
 	return s
+}
+
+// normalizeParamType 归一化**参数签名**中的类型文本：
+//   - 剥离模板实参并保留其后的指针/引用/数组后缀（Blob<Dtype>* → Blob*）；
+//   - 压缩空白、去掉 * & 与 [ 前的空格（const char * → const char*）。
+//
+// 关键字间的空格（const char、unsigned int）按规范保留。
+func normalizeParamType(s string) string {
+	return normalizeTypeText(helper.StripTemplateArgsKeepSuffix(s))
 }
 
 // paramName 提取参数名。
@@ -1323,7 +1424,8 @@ func (c *Collector) enrichFunction(elem *model.CodeElement, node coreast.Node, s
 					params = append(params, "...")
 					continue
 				}
-				t := paramTypeText(p, src)
+				// 展示用参数列表保留原文（含模板实参），与 QN 签名口径分离。
+				t := paramTypeText(p, src, false)
 				if t == "" {
 					continue
 				}

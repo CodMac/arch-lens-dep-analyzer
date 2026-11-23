@@ -392,7 +392,8 @@ func TestCollectorCppTemplate(t *testing.T) {
 	// 可变参数模板
 	AssertDef(t, gc, "Tuple", model.Struct)
 	AssertMores(t, gc, "Tuple", constants.TemplateParams, "<typename... Ts>")
-	AssertDef(t, gc, "count_args(Ts... args)", model.Function)
+	// 参数包展开：签名只留类型（Ts...），不含参数名
+	AssertDef(t, gc, "count_args(Ts...)", model.Function)
 
 	// 全特化 / 偏特化：QN 剥离模板实参，与主模板同 QN
 	AssertNoDef(t, gc, "Box<int>")
@@ -762,6 +763,33 @@ func TestCollectorCppParam(t *testing.T) {
 	AssertSignature(t, gc, "by_template(T,T*,T&)", []string{"T v", "T* pv", "T& rv"})
 }
 
+// TestCollectorCppSignature 签名流水线：模板实参剥离、后缀保留、空格归一、$N 位置。
+func TestCollectorCppSignature(t *testing.T) {
+	gc := collectCpp(t, "param")
+
+	// 模板实参剥离，但保留其后的 & * &&
+	AssertDef(t, gc, "tpl_param(const Blob&,Blob*,Blob&&)", model.Function)
+	AssertSignature(t, gc, "tpl_param(const Blob&,Blob*,Blob&&)",
+		[]string{"const Blob<Dtype>& b", "Blob<Dtype>* pb", "Blob<Dtype>&& rb"})
+
+	// 嵌套模板实参整体剥离
+	AssertDef(t, gc, "nested_tpl(std::map)", model.Function)
+	AssertSignature(t, gc, "nested_tpl(std::map)", []string{"std::map<int, std::vector<float>> m"})
+
+	// 关键字间空格保留；* & 前空格去除
+	AssertDef(t, gc, "spacing(const char*,unsigned int,const Blob&)", model.Function)
+	AssertSignature(t, gc, "spacing(const char*,unsigned int,const Blob&)",
+		[]string{"const char* s", "unsigned int n", "const Blob<int>& b"})
+
+	// 模板实参 + 数组后缀
+	AssertDef(t, gc, "tpl_array(Blob[],Blob*[])", model.Function)
+
+	// 同名同签名：序号插在参数列表之前
+	AssertDef(t, gc, "dup_sig(int,int)", model.Function)
+	AssertDef(t, gc, "dup_sig$2(int,int)", model.Function)
+	AssertNoDef(t, gc, "dup_sig(int,int)$2")
+}
+
 // =============================================================================
 // 14. Lambda
 // =============================================================================
@@ -909,6 +937,12 @@ func TestCollectorCppMacro(t *testing.T) {
 
 	// #undef 不产元素（OBJ_MACRO 只出现一次）
 	AssertNoDef(t, gc, "OBJ_MACRO$2")
+
+	// 宏无作用域语义：即使定义在 namespace / 函数体内，QN 仍是裸宏名
+	AssertDef(t, gc, "NS_MACRO", model.Macro)
+	AssertNoDef(t, gc, "macro_ns::NS_MACRO")
+	AssertDef(t, gc, "FUNC_SCOPED_MACRO", model.Macro)
+	AssertNoDef(t, gc, "macro_in_func()::FUNC_SCOPED_MACRO")
 }
 
 // =============================================================================
@@ -918,7 +952,7 @@ func TestCollectorCppMacro(t *testing.T) {
 func TestCollectorCppConditional(t *testing.T) {
 	gc := collectCpp(t, "cond")
 
-	// 各分支的 condition 标签
+	// 各分支的 condition 标签。分支回补（多遍投影合并）后全分支符号都在。
 	cases := map[string]string{
 		"cond_a":  "#ifdef FEATURE_A",
 		"cond_b":  "#ifndef FEATURE_B",

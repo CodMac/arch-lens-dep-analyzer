@@ -404,6 +404,7 @@ func TestCollectorCConditional(t *testing.T) {
 	AssertMores(t, gc, "cond_a", constants.Condition, "#ifdef FOO")
 	AssertMores(t, gc, "cond_ifndef", constants.Condition, "#ifndef FOO")
 	AssertMores(t, gc, "cond_if", constants.Condition, "#if defined(BAR)")
+	// 分支回补后 #elif/#else 分支元素同样产出。
 	AssertMores(t, gc, "cond_elif", constants.Condition, "#elif defined(BAZ)")
 	AssertMores(t, gc, "cond_else", constants.Condition, "#else")
 	// 嵌套分支取最内层
@@ -527,6 +528,7 @@ func TestCollectorConditional(t *testing.T) {
 	gc := RunCollection(t, "x/cpp/testdata", paths)
 
 	AssertMores(t, gc, "cond_a", constants.Condition, "#ifdef FOO")
+	// 分支回补后 #elif/#else 分支元素同样产出。
 	AssertMores(t, gc, "cond_b", constants.Condition, "#elif defined(BAR)")
 	AssertMores(t, gc, "cond_c", constants.Condition, "#else")
 	AssertMores(t, gc, "cond_d()", constants.Condition, "#ifndef BAZ")
