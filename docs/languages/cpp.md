@@ -362,6 +362,9 @@ type expr struct {
 | **EXTEND 自环** | 模板偏特化 `struct X : X<T,...>` 产自环 | 基类 QN 与自身相同时跳过 |
 | **PARAMETER 目标是 namespace** | 参数类型 QN 命中 namespace | `lookupTypeQN` 不再接受 Namespace |
 | **跨文件局部变量误命中** | `std::runtime_error` 的 `std` 被解析为别的文件里的局部变量 `std` | 全局短名兜底仅接受 `cpp.variable.is_global=true` 的变量与枚举常量 |
+| **宏语句致 QN 残影** | Unity 的 `EXPECT_ABORT_BEGIN`/`VERIFY_FAILS_END` 独占一行且未展开，C 语法把 `MACRO FN(...)` 解析成声明，QN 含 `;`/`}`/换行（cJSON 102 条） | `preproc.normalizeStatementMacros`：把「整行只有对象式宏名」的行置空，恢复为普通语句/空语句，真实函数得以正确解析 |
+| **多行类型注解宏未归一化** | `class GTEST_API_ Foo\n    : public Bar {` 的 `:` 在下一行，旧正则不匹配，`GTEST_API_` 未置空 → 类被解析成跨 2000 行的函数，并派生伪 namespace | 类型宏正则允许 `:`/`{` 出现在下一行（`[ \t]*(?:\r?\n[ \t]*)?`） |
+| **伪 namespace 悬空 CONTAIN** | 异常 QN 的父级 namespace 不存在 | Linker 仅当父级是真实 Namespace 元素时才建层级 CONTAIN |
 
 ## 8. 与 SPI 契约的对应
 

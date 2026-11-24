@@ -170,6 +170,45 @@ func TestProtoMacroReturnType(t *testing.T) {
 	}
 }
 
+// TestTypeMacroMultiline 类型注解宏后接换行再 `:`/`{` 时也应归一化。
+func TestTypeMacroMultiline(t *testing.T) {
+	src := []byte("class GTEST_API_ ScopedReporter\n    : public Base {\n};\n")
+	out := NormalizeMacros(src)
+	if len(out) != len(src) {
+		t.Fatalf("length changed: %d -> %d", len(src), len(out))
+	}
+	if bytes.Contains(out, []byte("GTEST_API_")) {
+		t.Errorf("type macro should be blanked: %q", out)
+	}
+	if !bytes.Contains(out, []byte("class ")) || !bytes.Contains(out, []byte("ScopedReporter\n    : public Base {")) {
+		t.Errorf("class declaration must remain: %q", out)
+	}
+}
+
+// TestStatementMacro 独占一行的对象式宏调用应被置空，避免 C 声明歧义吞并后续代码。
+func TestStatementMacro(t *testing.T) {
+	src := []byte("#define EXPECT_BEGIN \\\n    if (x) {\n" +
+		"#define EXPECT_END \\\n    }\n" +
+		"void f(void) {\n    EXPECT_BEGIN\n    g(1);\n    EXPECT_END\n}\n" +
+		"void h(void) { EXPECT_BEGIN g(2); EXPECT_END }\n")
+	out := NormalizeMacros(src)
+	if len(out) != len(src) {
+		t.Fatalf("length changed: %d -> %d", len(src), len(out))
+	}
+	// 独立成行的宏被置空。
+	if bytes.Contains(out, []byte("\n    EXPECT_BEGIN\n")) || bytes.Contains(out, []byte("\n    EXPECT_END\n")) {
+		t.Errorf("standalone statement macro should be blanked: %q", out)
+	}
+	// 同一行的用法保持不变（不在本次处理范围）。
+	if !bytes.Contains(out, []byte("void h(void) { EXPECT_BEGIN g(2); EXPECT_END }")) {
+		t.Errorf("inline macro usage should be untouched: %q", out)
+	}
+	// #define 行必须保留。
+	if !bytes.Contains(out, []byte("#define EXPECT_BEGIN")) {
+		t.Errorf("#define must be preserved: %q", out)
+	}
+}
+
 // TestKeepIncludes 未选中分支中的 #include 默认保留。
 func TestKeepIncludes(t *testing.T) {
 	src := loadFixture(t, "has_include.cpp")

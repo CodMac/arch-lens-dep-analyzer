@@ -70,9 +70,15 @@ func (l *Linker) linkNamespaces(gc core.GlobalContext, relMap map[string]*model.
 		}
 		qn := def.Element.QualifiedName
 		parent := helper.PkgOf(qn)
-		if parent != "" {
-			l.addRel(relMap, model.Namespace, parent, model.Namespace, qn)
+		if parent == "" {
+			continue
 		}
+		// 父级必须是真实存在的 namespace 元素；否则（QN 异常导致的伪父级）
+		// 会产出指向不存在元素的悬空 CONTAIN。
+		if p, ok := gc.FindByQualifiedName(parent); !ok || p.Element.Kind != model.Namespace {
+			continue
+		}
+		l.addRel(relMap, model.Namespace, parent, model.Namespace, qn)
 	}
 
 	// Namespace → 直接子元素由 Extractor 的 Contain 产出（按 ParentQN），此处不重复生成。
