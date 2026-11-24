@@ -209,6 +209,64 @@ func TestStatementMacro(t *testing.T) {
 	}
 }
 
+// TestLeadingObjectMacros 行首可见性宏序列后紧跟类型时应置空，避免与返回类型粘连。
+func TestLeadingObjectMacros(t *testing.T) {
+	src := []byte("#define GTEST_NO_INLINE_ __attribute__((noinline))\n" +
+		"#define GTEST_NO_TAIL_CALL_ __attribute__((no_instrument_function))\n" +
+		"GTEST_NO_INLINE_ GTEST_NO_TAIL_CALL_ std::string\n" +
+		"GetCurrentOsStackTraceExceptTop(UnitTest* u, int skip_count) {\n  return \"\";\n}\n")
+	out := NormalizeMacros(src)
+	if len(out) != len(src) {
+		t.Fatalf("length changed: %d -> %d", len(src), len(out))
+	}
+	if bytes.Contains(out, []byte("GTEST_NO_INLINE_ GTEST_NO_TAIL_CALL_ std::string")) {
+		t.Errorf("leading visibility macros should be blanked: %q", out)
+	}
+	if !bytes.Contains(out, []byte("std::string\nGetCurrentOsStackTraceExceptTop")) {
+		t.Errorf("return type and function name must remain: %q", out)
+	}
+}
+
+// TestQualifiedFunctionMacro 限定符后的函数式返回类型宏应连同实参置空。
+func TestQualifiedFunctionMacro(t *testing.T) {
+	src := []byte("#define GTEST_ADD_REF_(T) typename std::add_lvalue_reference<T>::type\n" +
+		"#define GTEST_TUPLE_ELEMENT_(i, T) typename std::tuple_element<i, T>::type\n" +
+		"  static GTEST_ADD_REF_(GTEST_TUPLE_ELEMENT_(0, Tuple))\n" +
+		"  Field(Tuple& t) { return t.f0_; }\n")
+	out := NormalizeMacros(src)
+	if len(out) != len(src) {
+		t.Fatalf("length changed: %d -> %d", len(src), len(out))
+	}
+	if bytes.Contains(out, []byte("static GTEST_ADD_REF_(")) {
+		t.Errorf("qualified function macro should be blanked: %q", out)
+	}
+	if !bytes.Contains(out, []byte("  static ")) || !bytes.Contains(out, []byte("Field(Tuple& t)")) {
+		t.Errorf("qualifier and function name must remain: %q", out)
+	}
+}
+
+// TestStandaloneFunctionMacro 整行的函数式宏调用应置空，避免破坏类体大括号。
+func TestStandaloneFunctionMacro(t *testing.T) {
+	src := []byte("#define PUSH_(n) _Pragma(\"push\")\n" +
+		"class A {\n  PUSH_(4180)\n  void f();\n};\n" +
+		"void g() {\n  PUSH_(1);\n}\n" +
+		"void h() { PUSH_(2); }\n")
+	out := NormalizeMacros(src)
+	if len(out) != len(src) {
+		t.Fatalf("length changed: %d -> %d", len(src), len(out))
+	}
+	if bytes.Contains(out, []byte("\n  PUSH_(4180)\n")) {
+		t.Errorf("standalone annotation macro should be blanked: %q", out)
+	}
+	if !bytes.Contains(out, []byte("void f();")) || !bytes.Contains(out, []byte("};")) {
+		t.Errorf("class body must remain: %q", out)
+	}
+	// 带分号的是语句宏，调用关系需保留，不得置空。
+	if !bytes.Contains(out, []byte("\n  PUSH_(1);\n")) {
+		t.Errorf("statement macro with semicolon must be kept: %q", out)
+	}
+}
+
 // TestKeepIncludes 未选中分支中的 #include 默认保留。
 func TestKeepIncludes(t *testing.T) {
 	src := loadFixture(t, "has_include.cpp")

@@ -364,6 +364,10 @@ type expr struct {
 | **跨文件局部变量误命中** | `std::runtime_error` 的 `std` 被解析为别的文件里的局部变量 `std` | 全局短名兜底仅接受 `cpp.variable.is_global=true` 的变量与枚举常量 |
 | **宏语句致 QN 残影** | Unity 的 `EXPECT_ABORT_BEGIN`/`VERIFY_FAILS_END` 独占一行且未展开，C 语法把 `MACRO FN(...)` 解析成声明，QN 含 `;`/`}`/换行（cJSON 102 条） | `preproc.normalizeStatementMacros`：把「整行只有对象式宏名」的行置空，恢复为普通语句/空语句，真实函数得以正确解析 |
 | **多行类型注解宏未归一化** | `class GTEST_API_ Foo\n    : public Bar {` 的 `:` 在下一行，旧正则不匹配，`GTEST_API_` 未置空 → 类被解析成跨 2000 行的函数，并派生伪 namespace | 类型宏正则允许 `:`/`{` 出现在下一行（`[ \t]*(?:\r?\n[ \t]*)?`） |
+| **行首可见性宏与返回类型粘连** | `GTEST_NO_INLINE_ GTEST_NO_TAIL_CALL_ std::string\nGetCurrent...(...)` 未置空，被解析成带 ERROR 的 qualified_identifier，QN 混入 `\r`（httplib 3 条） | `preproc.blankLeadingObjectMacros`：行首连续对象式宏后紧跟内置类型或 `X::` 限定类型时全部置空；宏定义在被包含的头文件（本文件无 `#define`）时按「全大写且含下划线」的宏名形态识别 |
+| **限定符后的函数式返回类型宏** | `static GTEST_ADD_REF_(GTEST_TUPLE_ELEMENT_(0, Tuple))` 的内层宏实参被当参数列表，产出 `(0,,Tuple)` 空参数（caffe 10 条） | `preproc.blankQualifiedFunctionMacro`：`static/inline/...` 后的函数式宏连同平衡括号实参一并置空 |
+| **整行函数式宏调用破坏类体** | 类体内 `GTEST_DISABLE_MSC_WARNINGS_PUSH_(4180)` 未展开被当错误声明，类体大括号失配，后续成员被吞进类内（httplib `gtest-printers.h` 的 `PrintToString` 变 VARIABLE） | `preproc.blankStandaloneFunctionMacro`：整行只有一个函数式宏调用且**不带分号**时置空宏名与实参；带分号的语句宏保持原样以保留调用关系 |
+| **整行函数式宏破坏类体大括号** | 类体内的 `GTEST_DISABLE_MSC_WARNINGS_PUSH_(4180)` 未展开被当错误声明，类体大括号失配，后续成员被吞进类内（httplib `gtest-printers.h` 的 `PrintToString` 变成类成员变量） | `preproc.blankStandaloneFunctionMacro`：整行只有一个函数式宏调用且**不带分号**时置空宏名与实参（带分号的语句宏保留，其调用关系不受影响） |
 | **伪 namespace 悬空 CONTAIN** | 异常 QN 的父级 namespace 不存在 | Linker 仅当父级是真实 Namespace 元素时才建层级 CONTAIN |
 
 ## 8. 与 SPI 契约的对应

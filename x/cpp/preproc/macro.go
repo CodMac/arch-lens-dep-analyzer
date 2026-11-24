@@ -74,10 +74,10 @@ func normalizeTypeMacros(src []byte) ([]byte, []MacroAnn) {
 //
 // 仅处理「整行只有宏名（可带注释）」的形态，不触碰 `MACRO x;` 等同行用法。
 func normalizeStatementMacros(src []byte) []byte {
-	macros := objectMacroNames(src)
-	if len(macros) == 0 {
-		return src
-	}
+	objMacros := objectMacroNames(src)
+	fnMacros := functionMacroNames(src)
+	// 即便本文件没有 #define，注解宏也可能定义在被包含的头文件中，
+	// 故仍需逐行做「宏名形态」兜底（见 isMacroLikeName）。
 	out := make([]byte, len(src))
 	copy(out, src)
 
@@ -90,16 +90,237 @@ func normalizeStatementMacros(src []byte) []byte {
 			eol += pos
 		}
 		line := src[pos:eol]
-		if name := standaloneMacroName(line); name != "" && macros[name] {
+		// 1) 整行只有对象式宏名：语句宏（EXPECT_ABORT_BEGIN）。
+		if name := standaloneMacroName(line); name != "" && objMacros[name] {
 			if i := bytes.Index(line, []byte(name)); i >= 0 {
-				for j := pos + i; j < pos+i+len(name); j++ {
-					out[j] = ' '
-				}
+				blankRange(out, pos+i, pos+i+len(name))
 			}
 		}
+		// 2) 行首对象式宏序列 + 内置/限定类型：可见性/属性宏（GTEST_NO_INLINE_）。
+		blankLeadingObjectMacros(out, src, pos, eol, objMacros)
+		// 3) 限定符 + 函数式宏（返回类型宏，GTEST_ADD_REF_(...)）。
+		blankQualifiedFunctionMacro(out, src, pos, eol, fnMacros)
+		// 4) 整行只有一个函数式宏调用：语句宏（GTEST_DISABLE_MSC_WARNINGS_PUSH_(4180)）。
+		blankStandaloneFunctionMacro(out, src, pos, eol, fnMacros)
 		pos = eol + 1
 	}
 	return out
+}
+
+// builtinTypeWords 是可用于判定「宏后面跟的是类型」的内置类型关键字。
+var builtinTypeWords = map[string]bool{
+	"void": true, "bool": true, "char": true, "short": true, "int": true,
+	"long": true, "float": true, "double": true, "signed": true, "unsigned": true,
+	"wchar_t": true, "char8_t": true, "char16_t": true, "char32_t": true,
+	"size_t": true, "ssize_t": true, "auto": true,
+}
+
+// declQualifierWords 是函数声明前的限定符关键字。
+var declQualifierWords = map[string]bool{
+	"static": true, "inline": true, "virtual": true, "constexpr": true,
+	"explicit": true, "friend": true, "extern": true, "consteval": true,
+	"constinit": true,
+}
+
+// blankLeadingObjectMacros 置空行首连续的对象式宏，前提是其后紧跟
+// 内置类型关键字或 `X::` 限定类型（说明这些宏是可见性/属性注解）。
+//
+// 例：`GTEST_NO_INLINE_ GTEST_NO_TAIL_CALL_ std::string` → 两个宏置空。
+func blankLeadingObjectMacros(out, src []byte, pos, eol int, macros map[string]bool) {
+	i := pos
+	for i < eol && (src[i] == ' ' || src[i] == '\t') {
+		i++
+	}
+	if i >= eol || src[i] == '#' {
+		return
+	}
+	var spans [][2]int
+	for {
+		j := i
+		for j < eol && (src[j] == ' ' || src[j] == '\t') {
+			j++
+		}
+		s := j
+		for j < eol && isIdentChar(src[j]) {
+			j++
+		}
+		if j == s {
+			break
+		}
+		name := string(src[s:j])
+		// 宏可能定义在其它头文件（如 gtest-port.h），本文件看不到 #define，
+		// 故对「全大写且含下划线」的宏名同样接受。
+		if !macros[name] && !isMacroLikeName(name) {
+			break
+		}
+		spans = append(spans, [2]int{s, j})
+		i = j
+	}
+	if len(spans) == 0 {
+		return
+	}
+	j := i
+	for j < eol && (src[j] == ' ' || src[j] == '\t') {
+		j++
+	}
+	s := j
+	for j < eol && isIdentChar(src[j]) {
+		j++
+	}
+	next := string(src[s:j])
+	qualified := j+1 < eol && src[j] == ':' && src[j+1] == ':'
+	if !builtinTypeWords[next] && !qualified {
+		return
+	}
+	for _, sp := range spans {
+		blankRange(out, sp[0], sp[1])
+	}
+}
+
+// blankQualifiedFunctionMacro 置空「限定符 + 函数式宏」的返回类型宏。
+//
+// 例：`static GTEST_ADD_REF_(GTEST_TUPLE_ELEMENT_(0, Tuple))`
+//
+//	→ `static`（宏及其实参置空），下一行的 `Field(...)` 恢复正常解析。
+func blankQualifiedFunctionMacro(out, src []byte, pos, eol int, macros map[string]bool) {
+	i := pos
+	for i < eol && (src[i] == ' ' || src[i] == '\t') {
+		i++
+	}
+	if i >= eol || src[i] == '#' {
+		return
+	}
+	s := i
+	for i < eol && isIdentChar(src[i]) {
+		i++
+	}
+	if !declQualifierWords[string(src[s:i])] {
+		return
+	}
+	for i < eol && (src[i] == ' ' || src[i] == '\t') {
+		i++
+	}
+	s = i
+	for i < eol && isIdentChar(src[i]) {
+		i++
+	}
+	name := string(src[s:i])
+	if !macros[name] && !isMacroLikeName(name) {
+		return
+	}
+	for i < eol && (src[i] == ' ' || src[i] == '\t') {
+		i++
+	}
+	if i >= eol || src[i] != '(' {
+		return
+	}
+	depth := 0
+	end := -1
+	for k := i; k < eol; k++ {
+		switch src[k] {
+		case '(':
+			depth++
+		case ')':
+			depth--
+			if depth == 0 {
+				end = k + 1
+			}
+		}
+		if end >= 0 {
+			break
+		}
+	}
+	if end < 0 {
+		return
+	}
+	blankRange(out, s, end)
+}
+
+// blankStandaloneFunctionMacro 置空「整行只有一个函数式宏调用」的宏名与实参。
+//
+// 例（类体内）：
+//
+//	GTEST_DISABLE_MSC_WARNINGS_PUSH_(4180)
+//
+// 未展开时 tree-sitter 会把该调用当错误声明，导致类体大括号失配、后续成员
+// 被吞进类内。置空后仅剩空行，语法恢复。分号与行尾注释保留。
+func blankStandaloneFunctionMacro(out, src []byte, pos, eol int, macros map[string]bool) {
+	i := pos
+	for i < eol && (src[i] == ' ' || src[i] == '\t') {
+		i++
+	}
+	if i >= eol || src[i] == '#' {
+		return
+	}
+	s := i
+	for i < eol && isIdentChar(src[i]) {
+		i++
+	}
+	name := string(src[s:i])
+	if !macros[name] && !isMacroLikeName(name) {
+		return
+	}
+	if i >= eol || src[i] != '(' {
+		return
+	}
+	depth := 0
+	end := -1
+	for k := i; k < eol; k++ {
+		switch src[k] {
+		case '(':
+			depth++
+		case ')':
+			depth--
+			if depth == 0 {
+				end = k + 1
+			}
+		}
+		if end >= 0 {
+			break
+		}
+	}
+	if end < 0 {
+		return
+	}
+	// 实参之后只允许空白与注释，且**不得带分号**：
+	// 带分号的是普通语句宏（如 TEST_ASSERT_*），其调用关系需保留；
+	// 不带分号的多为属性/告警注解宏，未展开时才会破坏语法。
+	j := end
+	for j < eol && (src[j] == ' ' || src[j] == '\t' || src[j] == '\r') {
+		j++
+	}
+	if j < eol && !(src[j] == '/' && j+1 < eol && (src[j+1] == '/' || src[j+1] == '*')) {
+		return
+	}
+	blankRange(out, s, end)
+}
+
+// blankRange 把 [from, to) 置为空格（保留换行）。
+func blankRange(b []byte, from, to int) {
+	for i := from; i < to && i < len(b); i++ {
+		if b[i] != '\n' && b[i] != '\r' {
+			b[i] = ' '
+		}
+	}
+}
+
+// isMacroLikeName 判定标识符是否形如宏名：全大写/数字/下划线，且含至少一个下划线。
+// 用于识别定义在其它头文件、本文件看不到 #define 的注解宏。
+func isMacroLikeName(s string) bool {
+	if len(s) < 3 || !bytes.ContainsRune([]byte(s), '_') {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if !(c == '_' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9') {
+			return false
+		}
+	}
+	return true
+}
+
+func isIdentChar(c byte) bool {
+	return c == '_' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9'
 }
 
 // objectMacroNames 收集文件内定义的对象式宏名（NAME 后不紧跟 `(`）。
@@ -107,6 +328,18 @@ func objectMacroNames(src []byte) map[string]bool {
 	names := make(map[string]bool)
 	for _, m := range objectMacroDefRe.FindAllSubmatch(src, -1) {
 		if len(m[2]) != 0 { // 函数式宏
+			continue
+		}
+		names[string(m[1])] = true
+	}
+	return names
+}
+
+// functionMacroNames 收集文件内定义的函数式宏名（NAME 后紧跟 `(`）。
+func functionMacroNames(src []byte) map[string]bool {
+	names := make(map[string]bool)
+	for _, m := range objectMacroDefRe.FindAllSubmatch(src, -1) {
+		if len(m[2]) == 0 {
 			continue
 		}
 		names[string(m[1])] = true
