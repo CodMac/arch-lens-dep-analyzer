@@ -103,7 +103,7 @@ func init() {
 }
 ```
 
-**接入方式**：任意入口只需 `import _ "github.com/CodMac/arch-lens-dep-analyer/x/java"`，init() 自动完成注册。
+**接入方式**：任意入口只需 `import _ "github.com/CodMac/arch-lens-dep-analyzer/x/java"`，init() 自动完成注册。
 
 ### 4.1 一次注册多种语言（C/C++ 模式）
 

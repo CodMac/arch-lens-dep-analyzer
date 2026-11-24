@@ -7,8 +7,8 @@
 package context
 
 import (
-	"github.com/CodMac/arch-lens-dep-analyer/core"
-	coreast "github.com/CodMac/arch-lens-dep-analyer/core/ast"
+	"github.com/CodMac/arch-lens-dep-analyzer/core"
+	coreast "github.com/CodMac/arch-lens-dep-analyzer/core/ast"
 )
 
 // FileContext 是 Java 的文件上下文：在通用实现之上增加单包语义。

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/CodMac/arch-lens-dep-analyer/engine"
+	"github.com/CodMac/arch-lens-dep-analyzer/engine"
 )
 
 func readLines(t *testing.T, path string) []string {

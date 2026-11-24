@@ -1,8 +1,8 @@
 package context
 
 import (
-	"github.com/CodMac/arch-lens-dep-analyer/core"
-	"github.com/CodMac/arch-lens-dep-analyer/model"
+	"github.com/CodMac/arch-lens-dep-analyzer/core"
+	"github.com/CodMac/arch-lens-dep-analyzer/model"
 )
 
 // GlobalContext 是 C/C++ 的全局符号上下文。

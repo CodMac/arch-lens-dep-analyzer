@@ -15,13 +15,13 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/CodMac/arch-lens-dep-analyer/core"
-	coreast "github.com/CodMac/arch-lens-dep-analyer/core/ast"
-	"github.com/CodMac/arch-lens-dep-analyer/model"
-	"github.com/CodMac/arch-lens-dep-analyer/x/cpp/constants"
-	cppctx "github.com/CodMac/arch-lens-dep-analyer/x/cpp/context"
-	"github.com/CodMac/arch-lens-dep-analyer/x/cpp/helper"
-	"github.com/CodMac/arch-lens-dep-analyer/x/cpp/preproc"
+	"github.com/CodMac/arch-lens-dep-analyzer/core"
+	coreast "github.com/CodMac/arch-lens-dep-analyzer/core/ast"
+	"github.com/CodMac/arch-lens-dep-analyzer/model"
+	"github.com/CodMac/arch-lens-dep-analyzer/x/cpp/constants"
+	cppctx "github.com/CodMac/arch-lens-dep-analyzer/x/cpp/context"
+	"github.com/CodMac/arch-lens-dep-analyzer/x/cpp/helper"
+	"github.com/CodMac/arch-lens-dep-analyzer/x/cpp/preproc"
 )
 
 // Collector 实现 core.Collector。
@@ -705,6 +705,12 @@ func (c *Collector) identifyElements(node coreast.Node, fCtx core.FileContext, t
 			return nil, ""
 		}
 		name := normalizeDeclaredTypeName(node.ChildByFieldName("name"), src)
+		// 匿名 enum（`enum : int { A, B };`）：tree-sitter-cpp 会给出一个文本为空的
+		// type_identifier（非 nil），归一化后为空串。空名不能作为 QN 段，否则产出
+		// `ns::` 与 `ns::::A`。按匿名处理：不产 Enum 元素，枚举常量挂当前容器。
+		if name == "" {
+			return nil, ""
+		}
 		return []identified{{
 			elem:   newElem(model.Enum, name, tmplParams),
 			isDecl: node.ChildByFieldName("body") == nil,
@@ -1099,7 +1105,11 @@ func normalizeQualified(s string) string {
 	s = strings.ReplaceAll(s, " ", "")
 	s = strings.ReplaceAll(s, "\t", "")
 	s = strings.ReplaceAll(s, "\n", "")
+	s = strings.ReplaceAll(s, "\r", "")
 	s = helper.StripTemplateArgsKeepSuffix(s)
+	// 全局作用域限定符 `::Foo` 不是 QN 的一部分（QN 用相对/绝对命名空间前缀表达），
+	// 生成代码（protobuf .pb.cc）大量使用 `::ns::Type`，前导 `::` 会产出空首段。
+	s = strings.TrimPrefix(s, helper.QNSep)
 	return s
 }
 

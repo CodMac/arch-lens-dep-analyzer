@@ -1,6 +1,6 @@
-# Arch-Lens-Dep-Analyer
+# Arch-Lens-Dep-Analyzer
 
-**Arch-Lens-Dep-Analyer** 是一款基于 **tree-sitter** 的多语言静态架构依赖分析引擎。它读取源码文件，解析出代码元素（类、方法、字段、变量等）及其之间的依赖关系（调用、创建、使用、赋值、继承、实现、泛型、闭包捕获等），以 JSONL 形式输出，用于架构可视化、依赖审计与演化追踪。
+**Arch-Lens-Dep-Analyzer** 是一款基于 **tree-sitter** 的多语言静态架构依赖分析引擎。它读取源码文件，解析出代码元素（类、方法、字段、变量等）及其之间的依赖关系（调用、创建、使用、赋值、继承、实现、泛型、闭包捕获等），以 JSONL 形式输出，用于架构可视化、依赖审计与演化追踪。
 
 设计文档位于 [docs/](docs/overview.md)，含架构、数据模型、流水线、动作解析、测试体系与语言扩展等专题。
 
@@ -78,30 +78,30 @@ Collector → Binder → Extractor → Linker → NoiseFilter
 
 ### 编译 (Build)
 
-Arch-Lens-Dep-Analyer 依赖 `tree-sitter` 动态库，编译前请确保环境已配置相关依赖：
+Arch-Lens-Dep-Analyzer 依赖 `tree-sitter` 动态库，编译前请确保环境已配置相关依赖：
 
 ```bash
 # 克隆项目
-git clone https://github.com/CodMac/arch-lens-dep-analyer.git
-cd arch-lens-dep-analyer
+git clone https://github.com/CodMac/arch-lens-dep-analyzer.git
+cd arch-lens-dep-analyzer
 
 # 下载依赖
 go mod download
 
 # 编译 CLI 工具
-CGO_ENABLED=1 go build -o arch-lens-dep-analyer .
+CGO_ENABLED=1 go build -o arch-lens-dep-analyzer .
 ```
 
 ### 基础使用 (Usage)
 
-Arch-Lens-Dep-Analyer 提供命令行接口，支持多种输出格式和过滤等级。
+Arch-Lens-Dep-Analyzer 提供命令行接口，支持多种输出格式和过滤等级。
 
 #### 1. 基础 JSONL 导出
 
 分析指定目录，并将结果导出为可供后续处理的 `jsonl` 格式：
 
 ```bash
-./arch-lens-dep-analyer -path ./my-project -lang java -level 1 -out-dir ./result
+./arch-lens-dep-analyzer -path ./my-project -lang java -level 1 -out-dir ./result
 ```
 
 输出：

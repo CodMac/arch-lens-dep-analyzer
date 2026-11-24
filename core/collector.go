@@ -1,7 +1,7 @@
 package core
 
 import (
-	"github.com/CodMac/arch-lens-dep-analyer/core/ast"
+	"github.com/CodMac/arch-lens-dep-analyzer/core/ast"
 )
 
 // Collector 负责将单个源文件解析为 FileContext（内含该文件的全部代码元素定义）。

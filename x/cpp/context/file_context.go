@@ -7,9 +7,9 @@
 package context
 
 import (
-	"github.com/CodMac/arch-lens-dep-analyer/core"
-	coreast "github.com/CodMac/arch-lens-dep-analyer/core/ast"
-	"github.com/CodMac/arch-lens-dep-analyer/x/cpp/preproc"
+	"github.com/CodMac/arch-lens-dep-analyzer/core"
+	coreast "github.com/CodMac/arch-lens-dep-analyzer/core/ast"
+	"github.com/CodMac/arch-lens-dep-analyzer/x/cpp/preproc"
 )
 
 // NamespaceAware 是 C/C++ 专属的可选能力接口：

@@ -1,7 +1,7 @@
 package core
 
 import (
-	"github.com/CodMac/arch-lens-dep-analyer/core/ast"
+	"github.com/CodMac/arch-lens-dep-analyzer/core/ast"
 )
 
 // ParserFactory 负责创建语言解析器。

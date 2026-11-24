@@ -1,7 +1,7 @@
 package helper
 
 import (
-	"github.com/CodMac/arch-lens-dep-analyer/model"
+	"github.com/CodMac/arch-lens-dep-analyzer/model"
 )
 
 // IsScopeContainer 判断元素 kind 是否为作用域容器。

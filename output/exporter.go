@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/CodMac/arch-lens-dep-analyer/model"
+	"github.com/CodMac/arch-lens-dep-analyzer/model"
 )
 
 // Exporter 负责将分析结果以 JSONL 写入指定输出目录。

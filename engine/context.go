@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/CodMac/arch-lens-dep-analyer/core"
-	"github.com/CodMac/arch-lens-dep-analyer/model"
+	"github.com/CodMac/arch-lens-dep-analyzer/core"
+	"github.com/CodMac/arch-lens-dep-analyzer/model"
 )
 
 // Config 描述一次完整分析运行的配置。

@@ -7,15 +7,15 @@
 package cpp
 
 import (
-	"github.com/CodMac/arch-lens-dep-analyer/core"
-	"github.com/CodMac/arch-lens-dep-analyer/x/cpp/binder"
-	"github.com/CodMac/arch-lens-dep-analyer/x/cpp/collector"
-	cppctx "github.com/CodMac/arch-lens-dep-analyer/x/cpp/context"
-	"github.com/CodMac/arch-lens-dep-analyer/x/cpp/extractor"
-	"github.com/CodMac/arch-lens-dep-analyer/x/cpp/linker"
-	"github.com/CodMac/arch-lens-dep-analyer/x/cpp/noise_filter"
-	"github.com/CodMac/arch-lens-dep-analyer/x/cpp/symbol_builder"
-	"github.com/CodMac/arch-lens-dep-analyer/x/cpp/symbol_resolver"
+	"github.com/CodMac/arch-lens-dep-analyzer/core"
+	"github.com/CodMac/arch-lens-dep-analyzer/x/cpp/binder"
+	"github.com/CodMac/arch-lens-dep-analyzer/x/cpp/collector"
+	cppctx "github.com/CodMac/arch-lens-dep-analyzer/x/cpp/context"
+	"github.com/CodMac/arch-lens-dep-analyzer/x/cpp/extractor"
+	"github.com/CodMac/arch-lens-dep-analyzer/x/cpp/linker"
+	"github.com/CodMac/arch-lens-dep-analyzer/x/cpp/noise_filter"
+	"github.com/CodMac/arch-lens-dep-analyzer/x/cpp/symbol_builder"
+	"github.com/CodMac/arch-lens-dep-analyzer/x/cpp/symbol_resolver"
 )
 
 func init() {

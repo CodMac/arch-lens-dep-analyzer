@@ -1,4 +1,4 @@
-// Package main 是 arch-lens-dep-analyer 的命令行入口（薄 CLI 层）。
+// Package main 是 arch-lens-dep-analyzer 的命令行入口（薄 CLI 层）。
 // 只做参数解析、文件扫描、调用 engine 流水线并交给 output 导出，不承载任何分析逻辑。
 package main
 
@@ -13,12 +13,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/CodMac/arch-lens-dep-analyer/core"
-	"github.com/CodMac/arch-lens-dep-analyer/engine"
-	"github.com/CodMac/arch-lens-dep-analyer/model"
-	"github.com/CodMac/arch-lens-dep-analyer/output"
-	_ "github.com/CodMac/arch-lens-dep-analyer/x/cpp"  // 注册 C/C++ 语言实现
-	_ "github.com/CodMac/arch-lens-dep-analyer/x/java" // 注册 Java 语言实现
+	"github.com/CodMac/arch-lens-dep-analyzer/core"
+	"github.com/CodMac/arch-lens-dep-analyzer/engine"
+	"github.com/CodMac/arch-lens-dep-analyzer/model"
+	"github.com/CodMac/arch-lens-dep-analyzer/output"
+	_ "github.com/CodMac/arch-lens-dep-analyzer/x/cpp"  // 注册 C/C++ 语言实现
+	_ "github.com/CodMac/arch-lens-dep-analyzer/x/java" // 注册 Java 语言实现
 )
 
 // Config 命令行配置。

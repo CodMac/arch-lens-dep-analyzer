@@ -1,7 +1,7 @@
 package core
 
 import (
-	"github.com/CodMac/arch-lens-dep-analyer/model"
+	"github.com/CodMac/arch-lens-dep-analyzer/model"
 )
 
 // NoiseFilter 负责按过滤等级移除噪音关系。

@@ -1,4 +1,4 @@
-module github.com/CodMac/arch-lens-dep-analyer
+module github.com/CodMac/arch-lens-dep-analyzer
 
 go 1.25.2
 

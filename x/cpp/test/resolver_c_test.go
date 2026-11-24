@@ -3,8 +3,8 @@ package test
 import (
 	"testing"
 
-	"github.com/CodMac/arch-lens-dep-analyer/model"
-	"github.com/CodMac/arch-lens-dep-analyer/x/cpp/constants"
+	"github.com/CodMac/arch-lens-dep-analyzer/model"
+	"github.com/CodMac/arch-lens-dep-analyzer/x/cpp/constants"
 )
 
 // TestResolverAnonymousTypedefField 覆盖匿名 struct 承载 typedef 的字段解析：

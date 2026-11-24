@@ -19,12 +19,12 @@ package symbol_resolver
 import (
 	"strings"
 
-	"github.com/CodMac/arch-lens-dep-analyer/core"
-	coreast "github.com/CodMac/arch-lens-dep-analyer/core/ast"
-	"github.com/CodMac/arch-lens-dep-analyer/model"
-	"github.com/CodMac/arch-lens-dep-analyer/x/cpp/constants"
-	cppctx "github.com/CodMac/arch-lens-dep-analyer/x/cpp/context"
-	"github.com/CodMac/arch-lens-dep-analyer/x/cpp/helper"
+	"github.com/CodMac/arch-lens-dep-analyzer/core"
+	coreast "github.com/CodMac/arch-lens-dep-analyzer/core/ast"
+	"github.com/CodMac/arch-lens-dep-analyzer/model"
+	"github.com/CodMac/arch-lens-dep-analyzer/x/cpp/constants"
+	cppctx "github.com/CodMac/arch-lens-dep-analyzer/x/cpp/context"
+	"github.com/CodMac/arch-lens-dep-analyzer/x/cpp/helper"
 )
 
 // SymbolResolver 实现 core.SymbolResolver。

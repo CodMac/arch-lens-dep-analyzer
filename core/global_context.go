@@ -3,8 +3,8 @@ package core
 import (
 	"sync"
 
-	coreast "github.com/CodMac/arch-lens-dep-analyer/core/ast"
-	"github.com/CodMac/arch-lens-dep-analyer/model"
+	coreast "github.com/CodMac/arch-lens-dep-analyzer/core/ast"
+	"github.com/CodMac/arch-lens-dep-analyzer/model"
 )
 
 // DefinitionEntry 描述一个代码元素定义及其父级归属。
@@ -40,7 +40,7 @@ type GlobalContext interface {
 	// Definitions 返回全部定义（只读快照）。
 	Definitions() []*DefinitionEntry
 
-	// AddDefinition 添加一个定义（幂等：已存在的 QN+Kind 忽略）。
+	// AddDefinition 添加一个定义（幂等：已存在的 QN+Kind+Path 忽略）。
 	AddDefinition(def *DefinitionEntry)
 
 	// FindByQualifiedName 按限定名查找定义。
@@ -81,7 +81,8 @@ type BaseGlobalContext struct {
 	fileContexts map[string]FileContext
 	definitions  []*DefinitionEntry
 
-	// qnIndex 全量索引：key = QN + "|" + Kind。声明/定义共存（G2）。
+	// qnIndex 全量索引：key = QN + "|" + Kind + "|" + Path。声明/定义共存（G2），
+	// 跨文件同名定义共存（C/C++ static / main / 合并副本）。
 	qnIndex map[string]*DefinitionEntry
 
 	// primaryIndex 主索引：key = 裸 QN，指向「定义优先」的元素（O(1) 查找）。
@@ -143,22 +144,26 @@ func (gc *BaseGlobalContext) Definitions() []*DefinitionEntry {
 	return append([]*DefinitionEntry(nil), gc.definitions...)
 }
 
-// AddDefinition 添加一个定义（幂等：已存在的 QN+Kind 忽略）。
+// AddDefinition 添加一个定义（幂等：已存在的 QN+Kind+Path 忽略）。
 func (gc *BaseGlobalContext) AddDefinition(def *DefinitionEntry) {
 	gc.mu.Lock()
 	defer gc.mu.Unlock()
 	gc.addDefinitionLocked(def)
 }
 
-// qnKey 构造全量索引键：QN + "|" + Kind。
+// qnKey 构造全量索引键：QN + "|" + Kind + "|" + Path。
 // 声明/定义分离语言（C/C++）中声明与定义 QN 相同但 Kind 不同（FUNCTION_DECL vs FUNCTION），
 // 纯 QN 去重会吞掉后注册者，故 key 含 Kind 使两者共存（G2）。
-func qnKey(qn string, kind model.ElementKind) string {
-	return qn + "|" + string(kind)
+//
+// key 还必须含文件路径：C/C++ 中 `static` 函数、多个示例文件的 `main`、合并副本
+// （如 protobuf 的 php/ruby upb amalgamation）会在不同文件出现相同 QN+Kind，
+// 它们是各自独立的定义，不能跨文件去重（否则整文件元素丢失）。
+func qnKey(qn string, kind model.ElementKind, path string) string {
+	return qn + "|" + string(kind) + "|" + path
 }
 
 func (gc *BaseGlobalContext) addDefinitionLocked(def *DefinitionEntry) {
-	key := qnKey(def.Element.QualifiedName, def.Element.Kind)
+	key := qnKey(def.Element.QualifiedName, def.Element.Kind, def.Element.Path)
 	if existing, exists := gc.qnIndex[key]; exists {
 		// 声明与定义同 QN 同 Kind（C 的 struct Fwd; struct Fwd{};）：定义覆盖声明。
 		if existing.IsDeclaration && !def.IsDeclaration {

@@ -10,10 +10,10 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/CodMac/arch-lens-dep-analyer/core"
-	"github.com/CodMac/arch-lens-dep-analyer/engine"
-	"github.com/CodMac/arch-lens-dep-analyer/model"
-	_ "github.com/CodMac/arch-lens-dep-analyer/x/cpp" // 注册 C/C++ 实现
+	"github.com/CodMac/arch-lens-dep-analyzer/core"
+	"github.com/CodMac/arch-lens-dep-analyzer/engine"
+	"github.com/CodMac/arch-lens-dep-analyzer/model"
+	_ "github.com/CodMac/arch-lens-dep-analyzer/x/cpp" // 注册 C/C++ 实现
 )
 
 // TestDataDir 指向测试样例目录。

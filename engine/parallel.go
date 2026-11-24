@@ -3,8 +3,8 @@ package engine
 import (
 	"sync"
 
-	"github.com/CodMac/arch-lens-dep-analyer/core"
-	"github.com/CodMac/arch-lens-dep-analyer/core/ast"
+	"github.com/CodMac/arch-lens-dep-analyzer/core"
+	"github.com/CodMac/arch-lens-dep-analyzer/core/ast"
 )
 
 // Scheduler 提供文件级并发调度：将任务并行分发给 N 个 worker。

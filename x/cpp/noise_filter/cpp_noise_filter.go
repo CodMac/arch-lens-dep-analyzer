@@ -4,8 +4,8 @@
 package noise_filter
 
 import (
-	"github.com/CodMac/arch-lens-dep-analyer/core"
-	"github.com/CodMac/arch-lens-dep-analyer/model"
+	"github.com/CodMac/arch-lens-dep-analyzer/core"
+	"github.com/CodMac/arch-lens-dep-analyzer/model"
 )
 
 // NoiseFilter 实现 core.NoiseFilter，内嵌默认等级存储。

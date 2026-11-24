@@ -2,7 +2,7 @@
 
 > 适用范围：Java（`x/java/`）与 C/C++（`x/cpp/`）· 与 [languages/java.md](languages/java.md)、[languages/cpp.md](languages/cpp.md) 互为补充
 >
-> QN 是 arch-lens-dep-analyer 中代码实体的**全局唯一标识**，贯穿 Collector（定义）、Binder/Resolver（解析）、Extractor（关系 Source/Target）、Linker（Contain 拓扑）、Exporter（JSONL）全流程。本文档罗列各类 Element 提取出的 QN 格式、拼接规则与边界情况，作为行为契约与测试校准依据。
+> QN 是 arch-lens-dep-analyzer 中代码实体的**全局唯一标识**，贯穿 Collector（定义）、Binder/Resolver（解析）、Extractor（关系 Source/Target）、Linker（Contain 拓扑）、Exporter（JSONL）全流程。本文档罗列各类 Element 提取出的 QN 格式、拼接规则与边界情况，作为行为契约与测试校准依据。
 >
 > §1–§7 以 Java 为主（点号分隔）；C/C++ 的差异集中在 §8（`::` 分隔、声明/定义双元素、namespace 层级）。
 

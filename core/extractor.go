@@ -1,7 +1,7 @@
 package core
 
 import (
-	"github.com/CodMac/arch-lens-dep-analyer/model"
+	"github.com/CodMac/arch-lens-dep-analyzer/model"
 )
 
 // Extractor 负责从单个文件提取全部依赖关系，是引擎的核心与最复杂阶段。

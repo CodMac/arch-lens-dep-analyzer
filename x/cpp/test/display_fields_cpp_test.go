@@ -3,7 +3,7 @@ package test
 import (
 	"testing"
 
-	"github.com/CodMac/arch-lens-dep-analyer/model"
+	"github.com/CodMac/arch-lens-dep-analyzer/model"
 )
 
 // =============================================================================

@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/CodMac/arch-lens-dep-analyer/core"
-	"github.com/CodMac/arch-lens-dep-analyer/model"
-	cppctx "github.com/CodMac/arch-lens-dep-analyer/x/cpp/context"
+	"github.com/CodMac/arch-lens-dep-analyzer/core"
+	"github.com/CodMac/arch-lens-dep-analyzer/model"
+	cppctx "github.com/CodMac/arch-lens-dep-analyzer/x/cpp/context"
 )
 
 // TestCollectorCppDisplayFieldsInvariant 对全部 C/C++ collector 样例断言展示层三字段的通用不变量。

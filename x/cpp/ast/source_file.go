@@ -1,8 +1,8 @@
 package ast
 
 import (
-	coreast "github.com/CodMac/arch-lens-dep-analyer/core/ast"
-	"github.com/CodMac/arch-lens-dep-analyer/x/cpp/preproc"
+	coreast "github.com/CodMac/arch-lens-dep-analyzer/core/ast"
+	"github.com/CodMac/arch-lens-dep-analyzer/x/cpp/preproc"
 	sitter "github.com/tree-sitter/go-tree-sitter"
 )
 

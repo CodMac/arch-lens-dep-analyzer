@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/CodMac/arch-lens-dep-analyer/engine"
+	"github.com/CodMac/arch-lens-dep-analyzer/engine"
 )
 
 // 报告文件名（与 element.jsonl / relation_*.jsonl 同目录）。

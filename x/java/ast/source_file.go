@@ -1,7 +1,7 @@
 package ast
 
 import (
-	coreast "github.com/CodMac/arch-lens-dep-analyer/core/ast"
+	coreast "github.com/CodMac/arch-lens-dep-analyzer/core/ast"
 	sitter "github.com/tree-sitter/go-tree-sitter"
 )
 

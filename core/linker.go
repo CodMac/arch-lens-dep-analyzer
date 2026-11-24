@@ -1,7 +1,7 @@
 package core
 
 import (
-	"github.com/CodMac/arch-lens-dep-analyer/model"
+	"github.com/CodMac/arch-lens-dep-analyzer/model"
 )
 
 // Linker 负责补齐层级关系（Contain/Extend/Implement），构建全局符号树。

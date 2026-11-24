@@ -3,9 +3,9 @@ package test
 import (
 	"testing"
 
-	"github.com/CodMac/arch-lens-dep-analyer/core"
-	"github.com/CodMac/arch-lens-dep-analyer/model"
-	"github.com/CodMac/arch-lens-dep-analyer/x/cpp/constants"
+	"github.com/CodMac/arch-lens-dep-analyzer/core"
+	"github.com/CodMac/arch-lens-dep-analyzer/model"
+	"github.com/CodMac/arch-lens-dep-analyzer/x/cpp/constants"
 )
 
 // TestExtractorStructural 覆盖结构关系：Import / Contain / Extend / Parameter / Return / TypeArg。

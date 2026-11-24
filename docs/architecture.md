@@ -240,7 +240,7 @@ x/cpp/
 ## 4. 模块清单
 
 ```
-arch-lens-dep-analyer/
+arch-lens-dep-analyzer/
 ├── cmd/analyzer/main.go
 ├── engine/
 │   ├── pipeline.go       # Pipeline 编排器 + Stage 接口

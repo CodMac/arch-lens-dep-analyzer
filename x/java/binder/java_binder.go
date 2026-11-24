@@ -6,11 +6,11 @@ package binder
 import (
 	"strings"
 
-	"github.com/CodMac/arch-lens-dep-analyer/core"
-	"github.com/CodMac/arch-lens-dep-analyer/model"
-	"github.com/CodMac/arch-lens-dep-analyer/x/java/constants"
-	"github.com/CodMac/arch-lens-dep-analyer/x/java/helper"
-	"github.com/CodMac/arch-lens-dep-analyer/x/java/symbol_resolver"
+	"github.com/CodMac/arch-lens-dep-analyzer/core"
+	"github.com/CodMac/arch-lens-dep-analyzer/model"
+	"github.com/CodMac/arch-lens-dep-analyzer/x/java/constants"
+	"github.com/CodMac/arch-lens-dep-analyzer/x/java/helper"
+	"github.com/CodMac/arch-lens-dep-analyzer/x/java/symbol_resolver"
 )
 
 // Binder 实现 core.Binder。
