@@ -146,6 +146,30 @@ func TestMacroClass(t *testing.T) {
 	}
 }
 
+// TestProtoMacroReturnType 返回类型宏 `MACRO(type) fn(...)` 应还原为普通函数声明。
+func TestProtoMacroReturnType(t *testing.T) {
+	src := []byte("CJSON_PUBLIC(const char*) cJSON_Version(void);\n" +
+		"CJSON_PUBLIC(cJSON *) cJSON_Parse(const char *value);\n" +
+		"TEST_F(Foo, Bar) {}\n")
+	out := NormalizeMacros(src)
+	if len(out) != len(src) {
+		t.Fatalf("length changed: %d -> %d", len(src), len(out))
+	}
+	if bytes.Contains(out, []byte("CJSON_PUBLIC")) {
+		t.Errorf("return-type macro should be rewritten: %q", out)
+	}
+	if !bytes.Contains(out, []byte("const char*")) || !bytes.Contains(out, []byte("cJSON_Version(void);")) {
+		t.Errorf("first prototype not restored: %q", out)
+	}
+	if !bytes.Contains(out, []byte("cJSON *")) || !bytes.Contains(out, []byte("cJSON_Parse(const char *value);")) {
+		t.Errorf("second prototype not restored: %q", out)
+	}
+	// 带逗号的宏（TEST_F）不是返回类型宏，必须保持原样。
+	if !bytes.Contains(out, []byte("TEST_F(Foo, Bar)")) {
+		t.Errorf("comma macro should be untouched: %q", out)
+	}
+}
+
 // TestKeepIncludes 未选中分支中的 #include 默认保留。
 func TestKeepIncludes(t *testing.T) {
 	src := loadFixture(t, "has_include.cpp")

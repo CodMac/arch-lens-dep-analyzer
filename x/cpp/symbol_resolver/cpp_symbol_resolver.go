@@ -129,14 +129,10 @@ func (r *SymbolResolver) ResolveAction(gc core.GlobalContext, fc core.FileContex
 		if r.lookupLocalVariable(gc, fc, e.node, e.name) != nil {
 			return nil
 		}
-		// 构造器调用（T(...) 临时对象）：按类型产构造器元素。
+		// 构造器调用（T(...) 临时对象）：解析到真实的构造器元素（带参数列表）。
+		// 无显式构造器（隐式构造器 / typedef）时返回 nil：不产指向不存在元素的 CALL。
 		if t := r.lookupType(gc, fc, e.name); t != nil {
-			return &model.CodeElement{
-				Kind:          model.Method,
-				Name:          t.Name,
-				QualifiedName: helper.BuildQN(t.QualifiedName, t.Name),
-				NamespaceQN:   t.NamespaceQN,
-			}
+			return r.lookupConstructor(gc, t, e.argc)
 		}
 		// 兜底：外部函数（保持原有 QN 形态：接收者原文::函数名）。
 		qn := e.name
@@ -161,7 +157,13 @@ func (r *SymbolResolver) ResolveAction(gc core.GlobalContext, fc core.FileContex
 			if t := r.lookupType(gc, fc, e.name); t != nil {
 				return t
 			}
-			return r.resolveExpr(gc, fc, e, wantFunc)
+			// 兜底：按被调用者全名解析为类型（std::runtime_error(...) 等外部类型）。
+			// 不能退回 resolveExpr(wantFunc)：那会把异常类型误判为函数/方法。
+			raw := e.name
+			if txt := exprText(e.recv, src); txt != "" {
+				raw = helper.BuildQN(txt, e.name)
+			}
+			return r.externalTypeOf(raw)
 		default:
 			if t := r.typeOf(gc, fc, e); t != nil {
 				return t
@@ -599,6 +601,39 @@ func (r *SymbolResolver) lookupMemberFunc(gc core.GlobalContext, fc core.FileCon
 	return nil
 }
 
+// lookupConstructor 在类型中查找与实参个数匹配的构造器元素。
+// 仅 Class/Struct 有构造器语义；typedef（TYPE）等返回 nil。
+func (r *SymbolResolver) lookupConstructor(gc core.GlobalContext, t *model.CodeElement, argc int) *model.CodeElement {
+	if t == nil || (t.Kind != model.Class && t.Kind != model.Struct) {
+		return nil
+	}
+	qn := helper.BuildQN(t.QualifiedName, t.Name)
+	entries, ok := gc.FindOverloadCandidates(qn)
+	if !ok {
+		return nil
+	}
+	if e := pickOverload(entries, argc); e != nil {
+		return e.Element
+	}
+	return nil
+}
+
+// externalTypeOf 按类型原文产外部类型元素（保留 :: 限定与原始形态）。
+func (r *SymbolResolver) externalTypeOf(raw string) *model.CodeElement {
+	raw = helper.NormalizeTypeText(raw)
+	base := helper.BaseTypeName(raw)
+	if base == "" || base == "?" {
+		return nil
+	}
+	if r.IsPrimitive(base) {
+		return &model.CodeElement{Name: base, QualifiedName: base, Kind: model.Primitive, IsFormExternal: true}
+	}
+	if helper.IsTypeVariable(base) {
+		return nil
+	}
+	return helper.NewExternalElement(model.Class, base, raw)
+}
+
 // typeChain 返回类型自身及其基类链（广度优先，去环）。
 func (r *SymbolResolver) typeChain(gc core.GlobalContext, fc core.FileContext, owner *model.CodeElement, depth int) []*model.CodeElement {
 	if owner == nil || depth > 8 {
@@ -742,16 +777,31 @@ func (r *SymbolResolver) lookupScopedSymbol(gc core.GlobalContext, fc core.FileC
 		}
 	}
 	// 全局短名（跨文件全局变量/枚举常量）。
+	// 必须排除局部变量与类字段：它们不具全局可见性，按短名跨文件命中会
+	// 把 `std::runtime_error(...)` 的 `std` 误解析为别的文件里的局部变量。
 	for _, def := range gc.Definitions() {
 		if def.Element.Name != name {
 			continue
 		}
 		switch def.Element.Kind {
-		case model.EnumConstant, model.Field, model.Variable:
+		case model.EnumConstant:
 			return def.Element
+		case model.Variable:
+			if isGlobalVariable(def.Element) {
+				return def.Element
+			}
 		}
 	}
 	return nil
+}
+
+// isGlobalVariable 判断变量是否为文件/全局作用域变量。
+func isGlobalVariable(e *model.CodeElement) bool {
+	if e == nil || e.Extra == nil {
+		return false
+	}
+	isGlobal, _ := e.Extra.Mores[constants.VariableIsGlobal].(bool)
+	return isGlobal
 }
 
 // lookupScopedFunc 沿作用域链查找函数/方法。

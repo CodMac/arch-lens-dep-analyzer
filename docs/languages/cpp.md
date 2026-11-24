@@ -297,7 +297,7 @@ type expr struct {
 | `new T()` | 直接取 `T` |
 | 外部类型变量（`std::string s; s.size()`） | 声明类型不在源码中时按外部类型元素归属，产 `std::string::size`（而非退化为 `s::size`） |
 | `obj(args)` 可调用对象 | 变量声明类型上的 `operator()` 重载；无匹配则不产 CALL（不误产外部函数） |
-| `T(...)` 临时对象 / `throw T(...)` | 被调用名命中类型时按构造器语义（CALL 目标 `T::T`；THROW 目标 `T`） |
+| `T(...)` 临时对象 / `throw T(...)` | 被调用名命中类型时按构造器语义：CALL 目标为**真实构造器元素**（按实参个数选重载，QN 含参数列表）；无显式构造器（隐式构造器 / typedef）时不产 CALL。THROW 目标为类型 `T` |
 | `[](int v){...}(3)` 立即调用 lambda | 段 1 保留 lambda 节点，段 2 直接命中对应 Lambda 元素 |
 
 解析顺序：段 1 已把接收者折叠为 `expr` 子树，段 2 的 `typeOf` 直接递归该子树；仅当接收者以纯文本形式（`formText`，公开 SPI 传入 `receiver` 字符串）出现时才走文本匹配（`this` / 类型名 / 简单变量）。裸标识符作接收者时**变量优先于同名类型**（`obj.method()` 语义）。
@@ -349,6 +349,19 @@ type expr struct {
 | B5 | **原始树有 ERROR 的文件降级** | 原始树含 `ERROR` 时无法作为全分支树，退回逐分支投影；嵌套组合仍可能漏 | caffe 14 个、protobuf 35 个文件受影响（实测） | 已知代价 |
 | B6 | **多遍解析成本** | 原始树有 ERROR 的文件仍需解析 N+1 遍 | 极端头文件（如 cpp-httplib 单文件 23 分支）解析耗时线性放大；raw 无 ERROR 时已跳过 | 已知代价，暂不优化 |
 | B7 | **`$N` 元素增量** | 原始树补齐多分支同名符号时产生 `$N` 变体（实测 caffe +16、cpp-httplib +2，其余项目 0） | QN 集合相对单树方案有增量；属真实多分支定义，语义正确 | 已接受 |
+
+### 7.2 已修复的解析缺陷（2026-11-24 审计）
+
+| 缺陷 | 修复前 | 修复方式 |
+|---|---|---|
+| **返回类型宏致原型丢失** | `CJSON_PUBLIC(const char*) fn(...)` 被 tree-sitter 当函数声明产出 ERROR，cJSON.h 的 83 个公开 API 原型全丢、125 个伪 VARIABLE | `preproc.normalizeProtoMacros`：把行首 `MACRO(type) fn(` 的宏调用原位改写为 `type` + 等长空格，恢复为普通函数声明 |
+| **构造器 CALL 悬空** | 构造器兜底用 `T::T`（无参数列表），与元素 `T::T(...)` 不匹配，caffe 781 / httplib 159 / cJSON 16 条悬空 | 按实参个数在 `gc.FindOverloadCandidates(T::T)` 中选真实构造器；无显式构造器（隐式 / typedef）时不产 CALL |
+| **ASSIGN 目标是方法** | `blob->mutable_cpu_data()[i] = v` 解析到方法，caffe 248 条 | 左值解析结果非 Variable/Field 时回退到基对象变量（`assignRoot`） |
+| **THROW 目标是方法** | `throw std::runtime_error(...)` 走外部函数兜底产 METHOD | 按被调用者全名解析为类型（外部类型保留 `std::` 前缀） |
+| **CALL 目标是类型** | typedef 构造 / 转换被当 CALL，httplib 22 / caffe 12 | 构造器解析仅接受 Class/Struct；CALL 目标为类型时改产 CAST |
+| **EXTEND 自环** | 模板偏特化 `struct X : X<T,...>` 产自环 | 基类 QN 与自身相同时跳过 |
+| **PARAMETER 目标是 namespace** | 参数类型 QN 命中 namespace | `lookupTypeQN` 不再接受 Namespace |
+| **跨文件局部变量误命中** | `std::runtime_error` 的 `std` 被解析为别的文件里的局部变量 `std` | 全局短名兜底仅接受 `cpp.variable.is_global=true` 的变量与枚举常量 |
 
 ## 8. 与 SPI 契约的对应
 

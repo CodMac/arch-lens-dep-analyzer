@@ -194,7 +194,12 @@ func TestExtractorCppActions(t *testing.T) {
 	})
 	FindRel(t, rels, func(r *model.DependencyRelation) bool {
 		return r.Type == model.Call && r.Source.QualifiedName == "act::maker()" &&
-			r.Target.QualifiedName == "act::Widget::Widget"
+			r.Target.QualifiedName == "act::Widget::Widget()"
+	})
+	// 构造器 CALL 按实参个数选重载（new Widget(3) → Widget(int)）。
+	FindRel(t, rels, func(r *model.DependencyRelation) bool {
+		return r.Type == model.Call && r.Source.QualifiedName == "act::maker()" &&
+			r.Target.QualifiedName == "act::Widget::Widget(int)"
 	})
 
 	// --- Cast：C 风格 / static_cast / dynamic_cast / const_cast / reinterpret_cast ---

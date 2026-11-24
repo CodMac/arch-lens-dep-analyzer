@@ -175,6 +175,10 @@ func (e *Extractor) extractStructural(fCtx core.FileContext, gc core.GlobalConte
 					if target == nil {
 						continue
 					}
+					// 模板偏特化 `struct X : X<T,...>` 的基类与自身同 QN，跳过自环。
+					if target.QualifiedName == elem.QualifiedName {
+						continue
+					}
 					rels = append(rels, &model.DependencyRelation{
 						Type: model.Extend, Source: elem, Target: target,
 						Mores: map[string]interface{}{constants.RelRawText: s},
@@ -215,7 +219,8 @@ func (e *Extractor) extractSignatureRels(fCtx core.FileContext, gc core.GlobalCo
 				typePart := paramTypeOnly(p)
 				target = e.resolver.ResolveType(gc, fCtx, typePart, model.Class)
 			}
-			if target == nil {
+			// 参数类型不应是 namespace（如 `strm(sock, session)` 的 most-vexing-parse）。
+			if target == nil || target.Kind == model.Namespace {
 				continue
 			}
 			rels = append(rels, &model.DependencyRelation{
@@ -233,7 +238,7 @@ func (e *Extractor) extractSignatureRels(fCtx core.FileContext, gc core.GlobalCo
 		if target == nil {
 			target = e.resolver.ResolveType(gc, fCtx, rt, model.Class)
 		}
-		if target != nil {
+		if target != nil && target.Kind != model.Namespace {
 			rels = append(rels, &model.DependencyRelation{
 				Type: model.Return, Source: elem, Target: target,
 				Mores: map[string]interface{}{constants.RelRawText: rt},
@@ -267,7 +272,7 @@ func (e *Extractor) extractTypeArgRels(fCtx core.FileContext, gc core.GlobalCont
 	if target == nil {
 		target = e.resolver.ResolveType(gc, fCtx, raw, model.Class)
 	}
-	if target == nil || target.Kind == model.Primitive {
+	if target == nil || target.Kind == model.Primitive || target.Kind == model.Namespace {
 		return nil
 	}
 	rels = append(rels, &model.DependencyRelation{
@@ -296,7 +301,7 @@ func (e *Extractor) lookupTypeQN(gc core.GlobalContext, qn string) *model.CodeEl
 	}
 	if entry, ok := gc.FindByQualifiedName(qn); ok {
 		switch entry.Element.Kind {
-		case model.Class, model.Struct, model.Enum, model.Type, model.Namespace:
+		case model.Class, model.Struct, model.Enum, model.Type:
 			return entry.Element
 		}
 	}
@@ -455,10 +460,27 @@ func (ac *actionCtx) handleCall(node coreast.Node) {
 		return
 	}
 	target := ac.resolver.ResolveAction(ac.gc, ac.fCtx, fn, model.Call)
+	// 目标解析为类型：说明这是转换/typedef 构造（如 const_cast<T>(x)），语义为 CAST。
+	if target != nil && isTypeElementKind(target.Kind) {
+		ac.add(model.Cast, source, target, fn, map[string]interface{}{
+			constants.RelRawText: helper.GetNodeContent(fn, *ac.fCtx.SourceBytes()),
+			constants.RelAstKind: "call_expression",
+		})
+		return
+	}
 	ac.add(model.Call, source, target, fn, map[string]interface{}{
 		constants.RelRawText: helper.GetNodeContent(fn, *ac.fCtx.SourceBytes()),
 		constants.RelAstKind: "call_expression",
 	})
+}
+
+// isTypeElementKind 判断元素是否为类型（转换目标 / typedef 构造）。
+func isTypeElementKind(k model.ElementKind) bool {
+	switch k {
+	case model.Class, model.Struct, model.Enum, model.Type:
+		return true
+	}
+	return false
 }
 
 // isCastCall 判断调用目标是否为 C++ 显式转换（static_cast 等）。
@@ -492,32 +514,65 @@ func (ac *actionCtx) handleNew(node coreast.Node) {
 		constants.RelRawText: helper.GetNodeContent(t, *ac.fCtx.SourceBytes()),
 		constants.RelAstKind: "new_expression",
 	})
-	// new Foo(...) 的构造器调用。
+	// new Foo(...) 的构造器调用：仅当存在真实构造器元素时才产 CALL。
 	if args := node.ChildByFieldName("arguments"); args != nil {
 		if target != nil {
-			ac.add(model.Call, source, ac.constructorOf(target), node, map[string]interface{}{
-				constants.RelRawText: target.Name,
-				constants.RelAstKind: "new_expression",
-			})
+			if ctor := ac.constructorOf(target, args.NamedChildCount()); ctor != nil {
+				ac.add(model.Call, source, ctor, node, map[string]interface{}{
+					constants.RelRawText: target.Name,
+					constants.RelAstKind: "new_expression",
+				})
+			}
 		}
 	}
 }
 
-// constructorOf 构造构造器元素（类型 → Method 语义）。
-func (ac *actionCtx) constructorOf(t *model.CodeElement) *model.CodeElement {
-	if t == nil {
+// constructorOf 解析与实参个数匹配的构造器元素。
+// 仅 Class/Struct 有构造器语义；无显式构造器（隐式构造器 / typedef）返回 nil，
+// 避免产指向不存在元素的 CALL（悬空）或 CALL→TYPE。
+func (ac *actionCtx) constructorOf(t *model.CodeElement, argc int) *model.CodeElement {
+	if t == nil || (t.Kind != model.Class && t.Kind != model.Struct) {
 		return nil
 	}
-	if t.Kind == model.Class || t.Kind == model.Struct {
-		return &model.CodeElement{
-			Kind:           model.Method,
-			Name:           t.Name,
-			QualifiedName:  helper.BuildQN(t.QualifiedName, t.Name),
-			NamespaceQN:    t.NamespaceQN,
-			IsFormExternal: t.IsFormExternal,
+	qn := helper.BuildQN(t.QualifiedName, t.Name)
+	entries, ok := ac.gc.FindOverloadCandidates(qn)
+	if !ok {
+		return nil
+	}
+	if e := pickConstructorOverload(entries, argc); e != nil {
+		return e.Element
+	}
+	return nil
+}
+
+// pickConstructorOverload 按实参个数挑选构造器（定义优先，其次声明）。
+func pickConstructorOverload(entries []*core.DefinitionEntry, argc int) *core.DefinitionEntry {
+	var fallback *core.DefinitionEntry
+	for _, e := range entries {
+		params, _ := e.Element.Extra.Mores[constants.FunctionParameters].([]string)
+		if len(params) != argc {
+			continue
+		}
+		if e.Element.Kind != model.MethodDecl {
+			return e
+		}
+		if fallback == nil {
+			fallback = e
 		}
 	}
-	return t
+	if fallback != nil {
+		return fallback
+	}
+	// 无参数信息：定义优先，否则首个。
+	for _, e := range entries {
+		if e.Element.Kind != model.MethodDecl {
+			return e
+		}
+	}
+	if len(entries) > 0 {
+		return entries[0]
+	}
+	return nil
 }
 
 // handleCast 处理强转。
@@ -552,6 +607,16 @@ func (ac *actionCtx) handleAssign(node coreast.Node) {
 		return
 	}
 	target := ac.resolver.ResolveAction(ac.gc, ac.fCtx, left, model.Assign)
+	// 下标/调用结果赋值（blob->mutable_cpu_data()[i] = v）会解析到方法。
+	// 回退到基对象变量，避免产 ASSIGN→METHOD。
+	if !isAssignTargetKind(target) {
+		if root := assignRoot(left); root != nil && !root.Equal(left) {
+			target = ac.resolver.ResolveAction(ac.gc, ac.fCtx, root, model.Assign)
+		}
+	}
+	if !isAssignTargetKind(target) {
+		return
+	}
 	op := ""
 	if o := node.ChildByFieldName("operator"); o != nil {
 		op = o.Utf8Text(*ac.fCtx.SourceBytes())
@@ -561,6 +626,33 @@ func (ac *actionCtx) handleAssign(node coreast.Node) {
 		constants.RelAstKind:        "assignment_expression",
 		constants.RelAssignOperator: op,
 	})
+}
+
+// isAssignTargetKind 判断元素是否可作为赋值目标。
+func isAssignTargetKind(e *model.CodeElement) bool {
+	if e == nil {
+		return false
+	}
+	return e.Kind == model.Variable || e.Kind == model.Field
+}
+
+// assignRoot 沿下标/调用/成员访问向下找到赋值的基对象节点。
+// 例：blob->mutable_cpu_data()[i] → identifier(blob)。
+func assignRoot(node coreast.Node) coreast.Node {
+	cur := node
+	for cur != nil {
+		switch cur.Kind() {
+		case "subscript_expression", "pointer_expression", "parenthesized_expression":
+			cur = cur.ChildByFieldName("argument")
+		case "call_expression":
+			cur = cur.ChildByFieldName("function")
+		case "field_expression":
+			cur = cur.ChildByFieldName("argument")
+		default:
+			return cur
+		}
+	}
+	return nil
 }
 
 // handleInit 处理变量初始化（int x = expr; / Point p{...}）。

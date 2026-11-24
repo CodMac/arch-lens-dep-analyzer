@@ -388,11 +388,13 @@ func TestResolverCreate(t *testing.T) {
 		return r.Type == model.Create && r.Source.QualifiedName == "maker()" &&
 			r.Target.QualifiedName == "Widget"
 	})
-	// new Widget() 同时产构造器 CALL。
-	FindRel(t, rels, func(r *model.DependencyRelation) bool {
-		return r.Type == model.Call && r.Source.QualifiedName == "maker()" &&
-			r.Target.QualifiedName == "Widget::Widget"
-	})
+	// Widget 无显式构造器（隐式构造器）→ 只产 CREATE，不产指向不存在元素的 CALL。
+	for _, r := range rels {
+		if r.Type == model.Call && r.Source.QualifiedName == "maker()" &&
+			strings.HasPrefix(r.Target.QualifiedName, "Widget::Widget") {
+			t.Errorf("unexpected constructor CALL to non-existent element: %s", r.Target.QualifiedName)
+		}
+	}
 }
 
 // TestResolverUse 覆盖变量/字段/枚举常量使用解析。
