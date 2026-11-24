@@ -104,7 +104,13 @@ Arch-Lens-Dep-Analyer 提供命令行接口，支持多种输出格式和过滤�
 ./arch-lens-dep-analyer -path ./my-project -lang java -level 1 -out-dir ./result
 ```
 
-输出：`<out-dir>/element.jsonl` 与 `<out-dir>/relation_{type}.jsonl`。
+输出：
+
+- `<out-dir>/element.jsonl` 与 `<out-dir>/relation_{type}.jsonl`：元素与关系。
+- `<out-dir>/scan_files.jsonl`：参与扫描的候选文件。
+- `<out-dir>/scan_succeeded.jsonl`：解析并收集成功的文件（含元素数、关系数、耗时）。
+- `<out-dir>/scan_failed.jsonl`：失败文件（含失败阶段与错误信息）。
+- `<out-dir>/analysis_summary.json`：任务概览（配置、文件/元素/关系计数、各阶段耗时、状态）。
 
 #### 2. 核心参数说明
 
@@ -116,6 +122,7 @@ Arch-Lens-Dep-Analyer 提供命令行接口，支持多种输出格式和过滤�
 | `-jobs` | CPU 核数 | 并发执行的任务数 |
 | `-filter` | `.*\.<lang>$` | 文件过滤正则（默认按语言扩展名） |
 | `-out-dir` | `./output` | 输出目录 |
+| `-strict` | `false` | 任一文件失败即返回非零退出码；默认 best-effort（跳过失败文件继续分析） |
 
 ---
 

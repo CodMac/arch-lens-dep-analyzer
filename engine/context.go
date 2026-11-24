@@ -3,6 +3,7 @@ package engine
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/CodMac/arch-lens-dep-analyer/core"
 	"github.com/CodMac/arch-lens-dep-analyer/model"
@@ -24,6 +25,10 @@ type Config struct {
 
 	// FilterLevel 噪音过滤等级。
 	FilterLevel core.FilterLevel
+
+	// BestEffort 为 true 时，单文件解析/收集/提取失败只记录不中止，
+	// 其余文件继续分析；为 false 时保持「首个错误即终止」。
+	BestEffort bool
 }
 
 // EngineContext 承载流水线各阶段之间的共享数据。
@@ -38,6 +43,13 @@ type EngineContext struct {
 
 	// Relations 已提取的依赖关系集合（阶段 3+ 填充）。
 	Relations []*model.DependencyRelation
+
+	// StageTimings 各流水线阶段的耗时（按执行顺序）。
+	StageTimings []StageTiming
+
+	// fileOutcomes 记录每个文件的最终状态（并发写，需加锁）。
+	outcomeMu    sync.Mutex
+	fileOutcomes map[string]*FileOutcome
 }
 
 // NewContext 根据配置创建引擎上下文。
@@ -50,9 +62,10 @@ func NewContext(cfg Config) (*EngineContext, error) {
 		return nil, fmt.Errorf("language %q does not provide NewGlobalContext", cfg.Language)
 	}
 	return &EngineContext{
-		Config: cfg,
-		Impl:   impl,
-		GC:     impl.NewGlobalContext(impl.SymbolResolver, impl.SymbolBuilder),
+		Config:       cfg,
+		Impl:         impl,
+		GC:           impl.NewGlobalContext(impl.SymbolResolver, impl.SymbolBuilder),
+		fileOutcomes: make(map[string]*FileOutcome),
 	}, nil
 }
 

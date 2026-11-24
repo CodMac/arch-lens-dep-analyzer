@@ -2,6 +2,7 @@ package engine
 
 import (
 	"fmt"
+	"time"
 )
 
 // Stage 表示流水线中的一个处理阶段。
@@ -37,7 +38,10 @@ func (p *Pipeline) AddStage(s Stage) *Pipeline {
 // Run 按序执行全部阶段。
 func (p *Pipeline) Run(ec *EngineContext) error {
 	for _, s := range p.stages {
-		if err := s.Execute(ec); err != nil {
+		start := time.Now()
+		err := s.Execute(ec)
+		ec.RecordStageDuration(s.Name(), time.Since(start))
+		if err != nil {
 			return fmt.Errorf("stage %q failed: %w", s.Name(), err)
 		}
 	}

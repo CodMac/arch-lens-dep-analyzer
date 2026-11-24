@@ -201,6 +201,22 @@ func clearTempFields(rels []*model.DependencyRelation) {
 | Linker | GC | 层级 Relation 追加 | 串行 |
 | NoiseFilter | 全部 Relation | 过滤后 Relation | 串行 |
 
+### 7.1 文件级结果与任务概览
+
+每个文件在 Collector/Extractor 阶段的最终状态记录在 `EngineContext.FileOutcomes`：
+
+- `BestEffort=true`（CLI 默认）：单文件解析/收集/提取失败只记录、不中止，其余文件继续；
+- `BestEffort=false`（`-strict`）：保持「首个错误即终止」，`RunDefault` 仍返回已填充的上下文供导出。
+
+CLI 在 `<out-dir>` 额外产出：
+
+| 文件 | 内容 |
+|---|---|
+| `scan_files.jsonl` | 参与扫描的候选文件 |
+| `scan_succeeded.jsonl` | 成功文件 + 元素数/关系数/耗时 |
+| `scan_failed.jsonl` | 失败文件 + 失败阶段 + 错误 |
+| `analysis_summary.json` | 配置、文件/元素/关系计数、阶段耗时、`success/partial/failed` 状态 |
+
 ## 8. 扩展点
 
 - **新语言**：实现全部 SPI → `init()` 注册 → 流水线自动适配。

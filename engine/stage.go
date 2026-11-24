@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/CodMac/arch-lens-dep-analyer/core"
 	"github.com/CodMac/arch-lens-dep-analyer/model"
@@ -36,25 +37,41 @@ func (s *CollectorStage) Execute(ec *EngineContext) error {
 	absRoot, _ := filepath.Abs(ec.Config.RootPath)
 
 	return s.scheduler.Run(ec.Config.FilePaths, func(path string, p core.Parser) error {
+		relPath := relPathOf(absRoot, path)
+		start := time.Now()
+
 		src, err := p.ParseFile(path)
 		if err != nil {
+			ec.markFileFailure(relPath, "collector", err, time.Since(start))
+			if ec.Config.BestEffort {
+				return nil
+			}
 			return err
 		}
 
 		fc, err := ec.Impl.Collector.CollectDefinitions(src)
 		if err != nil {
-			return err
-		}
-
-		relPath, err := filepath.Rel(absRoot, path)
-		if err != nil {
+			ec.markFileFailure(relPath, "collector", err, time.Since(start))
+			if ec.Config.BestEffort {
+				return nil
+			}
 			return err
 		}
 		normalizeFilePath(fc, relPath)
 
 		ec.GC.RegisterFileContext(fc)
+		ec.markFileSuccess(relPath, len(fc.Definitions()), time.Since(start))
 		return nil
 	})
+}
+
+// relPathOf 返回 path 相对项目根的 '/' 分隔路径；无法相对化时退回原路径。
+func relPathOf(absRoot, path string) string {
+	rel, err := filepath.Rel(absRoot, path)
+	if err != nil {
+		return filepath.ToSlash(path)
+	}
+	return filepath.ToSlash(rel)
 }
 
 // normalizeFilePath 将 FileContext 内全部路径统一为相对项目根的路径，并用 '/' 作分隔符：
@@ -136,16 +153,26 @@ func (s *ExtractorStage) Execute(ec *EngineContext) error {
 	var mu sync.Mutex
 
 	err := s.scheduler.Run(ec.Config.FilePaths, func(path string, p core.Parser) error {
-		relPath, _ := filepath.Rel(absRoot, path)
-		relPath = filepath.ToSlash(relPath)
+		relPath := relPathOf(absRoot, path)
+		// 收集阶段失败的文件没有 FileContext，跳过以免二次报错。
+		if !ec.fileSucceeded(relPath) {
+			return nil
+		}
+
+		start := time.Now()
 		rels, err := ec.Impl.Extractor.Extract(relPath, ec.GC)
 		if err != nil {
+			ec.markFileStageError(relPath, "extractor", err, time.Since(start))
+			if ec.Config.BestEffort {
+				return nil
+			}
 			return err
 		}
 
 		mu.Lock()
 		ec.Relations = append(ec.Relations, rels...)
 		mu.Unlock()
+		ec.markFileRelations(relPath, len(rels))
 		return nil
 	})
 
@@ -237,7 +264,8 @@ func RunDefault(cfg Config, parserFn func() (core.Parser, error)) (*EngineContex
 
 	pipeline := NewDefaultPipeline(cfg.Concurrency, parserFn)
 	if err := pipeline.Run(ec); err != nil {
-		return nil, err
+		// 返回已填充的上下文，供调用方导出已完成部分与失败清单。
+		return ec, err
 	}
 	return ec, nil
 }

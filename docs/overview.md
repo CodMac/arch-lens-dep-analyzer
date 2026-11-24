@@ -21,6 +21,7 @@ AST
 层级拓扑 / 纯净关系集
   ↓ 导出
 element.jsonl / relation_{type}.jsonl
+scan_files.jsonl / scan_succeeded.jsonl / scan_failed.jsonl / analysis_summary.json
 ```
 
 ## 2. 目标
