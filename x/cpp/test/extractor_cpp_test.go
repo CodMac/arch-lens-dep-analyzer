@@ -701,3 +701,18 @@ func TestExtractorCppNestedNamespace(t *testing.T) {
 		}
 	}
 }
+
+// TestExtractorCppOutOfLineFileRoot 类外/跨文件定义产 File → 元素 边。
+func TestExtractorCppOutOfLineFileRoot(t *testing.T) {
+	paths := ResolveTree(t, "linker/cpp/out_of_line")
+	ec := RunPipeline(t, "x/cpp/testdata", paths, core.LevelRaw)
+
+	const file = "linker/cpp/out_of_line/ool.cpp"
+	for _, qn := range []string{"ol::Svc::m()", "ol::freef(int)"} {
+		want := qn
+		FindRel(t, ec.Relations, func(r *model.DependencyRelation) bool {
+			return r.Type == model.Contain && r.Source.Kind == model.File &&
+				r.Source.QualifiedName == file && r.Target.QualifiedName == want
+		})
+	}
+}

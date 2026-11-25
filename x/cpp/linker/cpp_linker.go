@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/CodMac/arch-lens-dep-analyzer/core"
+	coreast "github.com/CodMac/arch-lens-dep-analyzer/core/ast"
 	"github.com/CodMac/arch-lens-dep-analyzer/model"
 	"github.com/CodMac/arch-lens-dep-analyzer/x/cpp/constants"
 	cppctx "github.com/CodMac/arch-lens-dep-analyzer/x/cpp/context"
@@ -50,16 +51,41 @@ func (l *Linker) LinkHierarchy(gc core.GlobalContext) []*model.DependencyRelatio
 }
 
 // isTopLevel 判定元素是否直接挂在文件节点下。
-// C++：无 namespace 前缀（ParentQN 为空）的元素；C：ParentQN 为空。
+// C++：无 namespace 前缀（ParentQN 为空）、父级是 namespace、或类外/跨文件定义。
 func isTopLevel(entry *core.DefinitionEntry, fCtx core.FileContext) bool {
 	if entry.ParentQN == "" {
 		return true
 	}
-	// 父级是命名空间元素（非类/结构体）→ 也属文件顶层拓扑。
-	if p, ok := fCtx.FindByQualifiedName(entry.ParentQN); ok {
-		return p.Element.Kind == model.Namespace
+	p, ok := fCtx.FindByQualifiedName(entry.ParentQN)
+	if !ok {
+		// 父级不在本文件：类外/跨文件定义（int p::f() / int p::R::m()），
+		// 该定义是本文件作用域内的实体 → 视为文件根。
+		return true
+	}
+	switch p.Element.Kind {
+	case model.Namespace:
+		return true
+	case model.Class, model.Struct, model.Enum:
+		// 父级是本文件的类型：仅当定义语法上位于文件/namespace 作用域
+		// （类外定义）才是文件根；类内成员/枚举常量不是。
+		return isOutOfLineDefinition(entry.Node)
 	}
 	return false
+}
+
+// isOutOfLineDefinition 判断元素节点是否定义在文件/namespace 作用域
+// （而非类体、枚举体、函数体、lambda 体内）。
+func isOutOfLineDefinition(node coreast.Node) bool {
+	if node == nil {
+		return false
+	}
+	for cur := node.Parent(); cur != nil; cur = cur.Parent() {
+		switch cur.Kind() {
+		case "field_declaration_list", "enumerator_list", "compound_statement", "lambda_expression":
+			return false
+		}
+	}
+	return true
 }
 
 // linkNamespaces 构建 Namespace → SubNamespace、Namespace → 元素、Namespace → File 关系。
