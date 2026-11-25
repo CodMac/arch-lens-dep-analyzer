@@ -564,3 +564,23 @@ func TestExtractorCppDesignatedInit(t *testing.T) {
 		})
 	}
 }
+
+// TestExtractorCppUsingDecl using 声明 / 命名空间别名产 USE 依赖。
+func TestExtractorCppUsingDecl(t *testing.T) {
+	paths := ResolvePaths(t, "extractor/cpp/using_decl", "*.cpp")
+	_, rels := RunExtraction(t, "x/cpp/testdata", paths)
+
+	cases := []struct {
+		src, tgt string
+	}{
+		{"UdDerived", "UdBase::ud_method()"},
+		{"ud_fn()", "udns::ud_free()"},
+		{"extractor/cpp/using_decl/ud.cpp", "udns"},
+	}
+	for _, tc := range cases {
+		src, tgt := tc.src, tc.tgt
+		FindRel(t, rels, func(r *model.DependencyRelation) bool {
+			return r.Type == model.Use && r.Source.QualifiedName == src && r.Target.QualifiedName == tgt
+		})
+	}
+}

@@ -492,6 +492,10 @@ func (ac *actionCtx) walk(node coreast.Node) {
 		ac.handleFieldInitializer(node)
 	case "initializer_pair":
 		ac.handleDesignatedInit(node)
+	case "using_declaration":
+		ac.handleUsingDecl(node)
+	case "namespace_alias_definition":
+		ac.handleNamespaceAlias(node)
 	case "identifier":
 		ac.handleUse(node)
 	case "field_expression", "qualified_identifier":
@@ -880,6 +884,119 @@ func (ac *actionCtx) declaredTypeOfInit(node coreast.Node) *model.CodeElement {
 		return nil
 	}
 	return ac.resolver.ResolveType(ac.gc, ac.fCtx, helper.GetNodeContent(typeNode, *ac.fCtx.SourceBytes()), model.Class)
+}
+
+// handleUsingDecl 处理 using 声明（using ns::f; / using Base::m;），
+// 语义为声明作用域对目标符号的依赖（USE）。
+func (ac *actionCtx) handleUsingDecl(node coreast.Node) {
+	var qual coreast.Node
+	for i := 0; i < node.NamedChildCount(); i++ {
+		if c := node.NamedChild(i); c != nil && c.Kind() == "qualified_identifier" {
+			qual = c
+			break
+		}
+	}
+	if qual == nil {
+		return
+	}
+	source := ac.scopeElementOf(node)
+	if source == nil {
+		return
+	}
+	target := ac.resolver.ResolveAction(ac.gc, ac.fCtx, qual, model.Call)
+	if target == nil || !isUsingTargetKind(target.Kind) {
+		target = ac.resolver.ResolveAction(ac.gc, ac.fCtx, qual, model.Use)
+	}
+	if target == nil || !isUsingTargetKind(target.Kind) {
+		return
+	}
+	ac.add(model.Use, source, target, node, map[string]interface{}{
+		constants.RelRawText: helper.GetNodeContent(qual, *ac.fCtx.SourceBytes()),
+		constants.RelAstKind: "using_declaration",
+	})
+}
+
+// isUsingTargetKind 判断 using 声明可指向的元素种类。
+func isUsingTargetKind(k model.ElementKind) bool {
+	switch k {
+	case model.Function, model.Method, model.FunctionDecl, model.MethodDecl,
+		model.Variable, model.Field, model.EnumConstant, model.Type:
+		return true
+	}
+	return false
+}
+
+// handleNamespaceAlias 处理命名空间别名（namespace na = ns;），
+// 语义为声明作用域对目标命名空间的依赖（USE）。
+func (ac *actionCtx) handleNamespaceAlias(node coreast.Node) {
+	var rhs coreast.Node
+	seenEq := false
+	for i := 0; i < node.NamedChildCount(); i++ {
+		c := node.NamedChild(i)
+		if c == nil {
+			continue
+		}
+		if seenEq {
+			rhs = c
+			break
+		}
+		if c.Kind() == "namespace_identifier" {
+			seenEq = true
+		}
+	}
+	if rhs == nil || rhs.Kind() != "namespace_identifier" {
+		return
+	}
+	source := ac.scopeElementOf(node)
+	if source == nil {
+		return
+	}
+	name := rhs.Utf8Text(*ac.fCtx.SourceBytes())
+	entry, ok := ac.gc.FindByQualifiedName(name)
+	if !ok || entry.Element.Kind != model.Namespace {
+		return
+	}
+	ac.add(model.Use, source, entry.Element, node, map[string]interface{}{
+		constants.RelRawText: name,
+		constants.RelAstKind: "namespace_alias_definition",
+	})
+}
+
+// scopeElementOf 定位声明语句的所属作用域（函数/方法/Lambda/块/字段/类/命名空间），
+// 文件作用域回退到 File 元素。
+func (ac *actionCtx) scopeElementOf(node coreast.Node) *model.CodeElement {
+	start, end := node.StartByte(), node.EndByte()
+	var best *model.CodeElement
+	bestSpan := -1
+	for _, entry := range ac.fCtx.Definitions() {
+		elem := entry.Element
+		if !isScopeKind(elem) || entry.Node == nil {
+			continue
+		}
+		s, e := entry.Node.StartByte(), entry.Node.EndByte()
+		if s <= start && end <= e {
+			if span := e - s; bestSpan < 0 || span < bestSpan {
+				bestSpan, best = span, elem
+			}
+		}
+	}
+	if best != nil {
+		return best
+	}
+	if entry, ok := ac.gc.FindByQualifiedName(ac.fCtx.FilePath()); ok {
+		return entry.Element
+	}
+	return nil
+}
+
+// isScopeKind 判断元素是否可作为声明语句的所属作用域。
+func isScopeKind(elem *model.CodeElement) bool {
+	switch elem.Kind {
+	case model.Function, model.Method, model.Lambda, model.ScopeBlock, model.Field,
+		model.Class, model.Struct, model.Namespace:
+		return true
+	}
+	return false
 }
 
 // handleUse 处理标识符使用（排除定义点/调用名/字段名/类型位置）。
