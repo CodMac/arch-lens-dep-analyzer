@@ -189,6 +189,7 @@ func canonicalParamType(raw, withQN string) string {
 	if base == "" {
 		return rawType
 	}
+	base = canonicalPrimitive(base)
 	ptrs := strings.Count(rawType, "*") + strings.Count(rawType, "[")
 	refs := strings.Count(rawType, "&")
 	var b strings.Builder
@@ -202,6 +203,62 @@ func canonicalParamType(raw, withQN string) string {
 		b.WriteString(" volatile")
 	}
 	return b.String()
+}
+
+// canonicalPrimitive 归一化基本类型的等价拼写：
+// `unsigned`→`unsigned int`、`signed`→`int`、`long`/`long int`→`long`、
+// `unsigned long int`→`unsigned long`、`short int`→`short` 等。
+func canonicalPrimitive(s string) string {
+	if !helper.IsPrimitive(s) {
+		return s
+	}
+	fields := strings.Fields(s)
+	has := func(w string) bool {
+		for _, f := range fields {
+			if f == w {
+				return true
+			}
+		}
+		return false
+	}
+	if len(fields) == 1 {
+		switch fields[0] {
+		case "unsigned":
+			return "unsigned int"
+		case "signed":
+			return "int"
+		}
+		return s
+	}
+	if has("void") || has("float") || has("double") || has("bool") || has("wchar_t") {
+		return s
+	}
+	longCount := 0
+	for _, f := range fields {
+		if f == "long" {
+			longCount++
+		}
+	}
+	var base string
+	switch {
+	case has("char"):
+		base = "char"
+	case has("short"):
+		base = "short"
+	case longCount >= 2:
+		base = "long long"
+	case longCount == 1:
+		base = "long"
+	default:
+		base = "int"
+	}
+	if has("unsigned") {
+		return "unsigned " + base
+	}
+	if has("signed") && base == "char" {
+		return "signed char"
+	}
+	return base
 }
 
 // hasWord 判断类型文本中是否含指定关键字 token。

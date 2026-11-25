@@ -610,6 +610,8 @@ func TestExtractorCppImplLinkSignature(t *testing.T) {
 		{"sig_ov(SigPoint)", "sig_ov(SigPoint)"},
 		{"sig_ov(const SigPoint&)", "sig_ov(const SigPoint&)"},
 		{"sig_ov(SigPoint*)", "sig_ov(SigPoint*)"},
+		{"sig_unsigned(unsigned int)", "sig_unsigned(unsigned)"},
+		{"sig_long(long int)", "sig_long(long)"},
 	}
 	for _, p := range pairs {
 		src, tgt := p[0], p[1]

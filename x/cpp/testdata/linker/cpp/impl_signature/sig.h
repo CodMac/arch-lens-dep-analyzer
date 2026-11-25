@@ -17,3 +17,6 @@ int sig_ov(const SigPoint& s);
 int sig_ov(SigPoint* s);
 
 #endif
+
+int sig_unsigned(unsigned v);
+int sig_long(long v);
