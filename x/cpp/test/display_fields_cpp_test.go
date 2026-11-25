@@ -37,11 +37,11 @@ func TestCollectorCppDisplayFieldsEdge(t *testing.T) {
 		AssertDisplayFields(t, gc, "$anon", "", "", "")
 		AssertDisplayFields(t, gc, "$anon::anon_var", "$anon", "$anon", "")
 		AssertDisplayFields(t, gc, "$anon::AnonType", "$anon", "$anon", "$anon::AnonType")
-		// 重开 namespace：QN 层为 ns_reopen$2，展示层 NamespaceQN 归并为 ns_reopen
+		// 重开 namespace：同名即同一实体，不产生 $N，子元素前缀保持 ns_reopen
 		AssertDisplayFields(t, gc, "ns_reopen::First", "ns_reopen", "ns_reopen", "ns_reopen::First")
-		AssertDisplayFields(t, gc, "ns_reopen$2", "", "", "")
-		AssertDisplayFields(t, gc, "ns_reopen$2::Second", "ns_reopen", "ns_reopen", "ns_reopen::Second")
-		AssertDisplayFields(t, gc, "ns_reopen$2::Second::b", "ns_reopen", "ns_reopen$2::Second", "ns_reopen::Second")
+		AssertNoDef(t, gc, "ns_reopen$2")
+		AssertDisplayFields(t, gc, "ns_reopen::Second", "ns_reopen", "ns_reopen", "ns_reopen::Second")
+		AssertDisplayFields(t, gc, "ns_reopen::Second::b", "ns_reopen", "ns_reopen::Second", "ns_reopen::Second")
 	})
 
 	t.Run("类型全形态", func(t *testing.T) {

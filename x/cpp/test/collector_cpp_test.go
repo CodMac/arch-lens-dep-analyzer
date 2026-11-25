@@ -119,6 +119,12 @@ func TestCollectorCppNamespace(t *testing.T) {
 	AssertDef(t, gc, "$anon::anon_var", model.Variable)
 	AssertDef(t, gc, "$anon::AnonStruct", model.Struct)
 
+	// 重开 namespace：同名即同一实体，不产生 $N，子元素前缀保持 reopen_ns
+	AssertDef(t, gc, "reopen_ns", model.Namespace)
+	AssertDef(t, gc, "reopen_ns::R1", model.Struct)
+	AssertDef(t, gc, "reopen_ns::R2", model.Struct)
+	AssertNoDef(t, gc, "reopen_ns$2")
+
 	// namespace alias / using 不产元素
 	AssertNoDef(t, gc, "alias_ns")
 	AssertNoDef(t, gc, "using")

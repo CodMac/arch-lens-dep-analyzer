@@ -32,6 +32,19 @@ struct AnonStruct {
 };
 } // namespace
 
+/* 重开 namespace：同名即同一实体，不产生 $N，子元素前缀保持 reopen_ns。 */
+namespace reopen_ns {
+struct R1 {
+    int a;
+};
+} // namespace reopen_ns
+
+namespace reopen_ns {
+struct R2 {
+    int b;
+};
+} // namespace reopen_ns
+
 /* namespace alias 不产元素（不是定义）。 */
 namespace alias_ns = outer::middle;
 

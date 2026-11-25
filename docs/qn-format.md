@@ -439,6 +439,8 @@ C/C++ 的 QN 分隔符为 **`::`**（`x/cpp/symbol_builder`），其余拼接语
 | Lambda | `容器QN::lambda$N` | `capture_user(int)::lambda$1` |
 | ScopeBlock | `容器QN::block$N` | `total(...)::block$1` |
 
+**namespace 可重开**：同文件多次 `namespace ns {}` 是同一实体，不参与 `$N` 消歧，均产出 `ns`，其下子元素前缀保持 `ns::...`。
+
 ### 8.2 参数签名规则
 
 - 仅类型不含名：`add(int a, int b)` → `add(int,int)`。

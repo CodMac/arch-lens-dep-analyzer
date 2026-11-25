@@ -940,6 +940,12 @@ func (c *Collector) assignQN(it *identified, currentQN string, occurrences map[s
 	}
 
 	switch elem.Kind {
+	case model.Namespace:
+		// namespace 可重开：同名即同一实体，不参与 `$N` 消歧。
+		// 否则重开块被消歧为 `ns$2`，其下所有子元素 QN 前缀随之变形，
+		// 导致 `ns::T` 引用解析不到 `ns$2::T`、跨重开块的声明/定义无法配对。
+		elem.QualifiedName = c.resolver.BuildQualifiedName(currentQN, name)
+		return
 	case model.Lambda, model.ScopeBlock:
 		// Lambda/ScopeBlock 的 `$N` 是「同容器第 N 个 lambda/block」的序号，
 		// 与普通同名元素（如名为 `block` 的变量）无关，故用独立计数键，

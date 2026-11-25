@@ -85,7 +85,7 @@ Collector 末尾（Step 5，全部定义注册与 namespace 汇总之后）统�
 - **File 元素三字段恒空**。
 - **类型元素**（Class/Struct/Enum）的 `TypeQN` 取自身所在的最外层类型：`ns::L1::L2::L3` → `ns::L1`。
 - **函数/方法**的 `TypeQN` 为空（函数不是类型）；自由函数内的局部类型 `TypeQN` 也为空。
-- **重开 namespace** 的 QN 消歧后缀 `$N` 仅在展示层剥离：`ns_reopen$2::Second` → `NamespaceQN=ns_reopen`、`TypeQN=ns_reopen::Second`；元素自身 `QualifiedName` 保持 `ns_reopen$2::Second` 不变。
+- **重开 namespace** 同名即同一实体，不参与 `$N` 消歧：两次 `namespace ns_reopen {}` 都产出 `ns_reopen`，其下子元素前缀保持 `ns_reopen::Second`，因此 `ns_reopen::T` 引用可直接解析、跨重开块的声明/定义可配对。
 - **跨文件类外定义**（源文件不写 `namespace {}` 块，仅限定定义）沿父链回退推导：`ool_no_block::Remote::method(int)` → `NamespaceQN=ool_no_block`、`TypeQN=ool_no_block::Remote`。
 - **匿名 namespace**（`$anon`）与具名 namespace 同等对待，可作为 `NamespaceQN`。
 
@@ -382,6 +382,7 @@ type expr struct {
 | **block/lambda 序号被同名变量挤占** | 容器内存在名为 `block` 的变量时，作用域块被消歧为 `block$2` | Lambda/ScopeBlock 使用独立计数键 `#block`/`#lambda`，与普通同名元素解耦 |
 | **tag 与 typedef 同名跨 Kind 误消歧** | `typedef struct cJSON {...} cJSON;` 的 struct tag 被挤成 `cJSON$2`（cJSON 3 处、httplib 2 处）；下游 `HTTPParser : public http_parser` 的 EXTEND 命中 typedef TYPE | `assignQN` 消歧键加入 Kind：`name+suffix+Kind`。QN+Kind 才是元素身份，跨 Kind 同名不触发 `$N`，tag 与 typedef 以同 QN 不同 Kind 共存 |
 | **原型形参幽灵 Variable** | `f(int a, char* b);` 原型的形参被建模为 `f(int,char*)::a` / `::b`（caffe 907、httplib 796、DuckX 294、cJSON 14、property_tree 10） | 纯声明（FunctionDecl/MethodDecl）不下钻参数列表；定义形参照常收集（形参在作用域内） |
+| **重开 namespace 被误消歧** | 同文件两次 `namespace ns {}` 产出 `ns` / `ns$2`，子元素前缀被传染为 `ns$2::T`，导致 `ns::T` 引用解析不到、跨重开块的声明/定义无法配对 | `assignQN` 对 `model.Namespace` 恒用裸名、不参与 `$N` 计数；重开块归一为同一 QN（全局索引按 QN+Kind+Path 去重） |
 
 ## 8. 与 SPI 契约的对应
 
@@ -468,7 +469,7 @@ type expr struct {
   | `TestResolverCppScope` | 相对限定名补全、短名作用域上溯、嵌套类成员、块内遮蔽 |
   | `TestResolverCppExternal` | 外部类型方法归属（`std::string::size`）、模板变量不产依赖、基本类型 PRIMITIVE、外部类型 NamespaceQN |
   | `TestCollectorCppDisplayFields` | 展示层三字段：namespace 层级、嵌套类型 TypeQN、自由函数无宿主、跨文件类外定义、File 三字段空 |
-  | `TestCollectorCppDisplayFieldsEdge` | 展示层三字段边界：三层 namespace / C++17 嵌套 / inline / 匿名 / 重开 `$N` 归并、三层嵌套类型、union/enum、模板嵌套、typedef 与匿名承载、局部类型（方法内/自由函数/块/lambda/局部套局部）、跨文件类外定义（有/无 namespace 块）、纯 C、`extern "C"`、运算符、`= default` |
+  | `TestCollectorCppDisplayFieldsEdge` | 展示层三字段边界：三层 namespace / C++17 嵌套 / inline / 匿名 / 重开归一、三层嵌套类型、union/enum、模板嵌套、typedef 与匿名承载、局部类型（方法内/自由函数/块/lambda/局部套局部）、跨文件类外定义（有/无 namespace 块）、纯 C、`extern "C"`、运算符、`= default` |
   | `TestCollectorCppDisplayFieldsInvariant` | 横切不变量（遍历全部 collector 样例 785 元素）：File 三字段空、NamespaceQN 必为真实 namespace、EnclosingQN == ParentQN（namespace 侧剥离 `$N`）、TypeQN 必为具名类型且是展示层 QN 的段边界前缀、TypeQN 不得是函数 QN |
   | `TestResolverCppLambdaVar` | lambda 变量调用、立即调用 lambda |
   | `TestResolverCppCast` | C 风格 + static/dynamic/const/reinterpret_cast、`(void)` 抑制 |
