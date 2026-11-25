@@ -43,6 +43,11 @@ typedef struct {
     int y;
 } Point;
 
+/* 具名 struct typedef 同名：tag 与 typedef 名同 QN、不同 Kind，不产生 $2 */
+typedef struct TagSame {
+    int n;
+} TagSame;
+
 /* 别名使用 */
 ulong_t g_ulong;
 my_int g_myint;

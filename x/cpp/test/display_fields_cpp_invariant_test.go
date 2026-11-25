@@ -23,6 +23,18 @@ func TestCollectorCppDisplayFieldsInvariant(t *testing.T) {
 		t.Fatal("no file contexts collected")
 	}
 
+	// 同一 QN 可跨 Kind 共存（如 `typedef struct X {...} X;` 的 STRUCT 与 TYPE），
+	// 裸 QN 主索引只返回其中之一，故按 QN 汇总全部 Kind 判定「是否为具名类型」。
+	qnKinds := make(map[string]map[model.ElementKind]bool)
+	for _, def := range gc.Definitions() {
+		kinds := qnKinds[def.Element.QualifiedName]
+		if kinds == nil {
+			kinds = make(map[model.ElementKind]bool)
+			qnKinds[def.Element.QualifiedName] = kinds
+		}
+		kinds[def.Element.Kind] = true
+	}
+
 	checked := 0
 	for _, fc := range fileContexts {
 		nsSet := make(map[string]bool)
@@ -79,7 +91,7 @@ func TestCollectorCppDisplayFieldsInvariant(t *testing.T) {
 				if !ok {
 					t.Errorf("[4] %s TypeQN = %q 不在 GlobalContext 中",
 						elem.QualifiedName, elem.TypeQN)
-				} else if !isCppNamedTypeKindForTest(target.Element.Kind) {
+				} else if !isCppNamedTypeKindForTest(target.Element.Kind) && !hasNamedTypeKind(qnKinds[elem.TypeQN]) {
 					t.Errorf("[4] %s TypeQN = %q kind = %s，不是具名类型",
 						elem.QualifiedName, elem.TypeQN, target.Element.Kind)
 				}
@@ -105,6 +117,16 @@ func TestCollectorCppDisplayFieldsInvariant(t *testing.T) {
 	if checked < 500 {
 		t.Errorf("only %d elements checked, expected a broad sweep (>=500)", checked)
 	}
+}
+
+// hasNamedTypeKind 判定同 QN 的任一 Kind 是否为具名类型。
+func hasNamedTypeKind(kinds map[model.ElementKind]bool) bool {
+	for k := range kinds {
+		if isCppNamedTypeKindForTest(k) {
+			return true
+		}
+	}
+	return false
 }
 
 // isCppNamedTypeKindForTest 复刻 Collector 的具名类型判定（测试侧独立定义）。

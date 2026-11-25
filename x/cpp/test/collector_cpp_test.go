@@ -187,6 +187,8 @@ func TestCollectorCppDeclDef(t *testing.T) {
 	// 只声明不定义
 	AssertDef(t, gc, "never_defined(int)", model.FunctionDecl)
 	AssertNoKind(t, gc, "never_defined(int)", model.Function)
+	// 纯声明不下钻形参：不为原型形参产 Variable
+	AssertNoDef(t, gc, "never_defined(int)::a")
 
 	// 头文件内完整定义的结构体
 	AssertDef(t, gc, "DefinedInHeader", model.Struct)
@@ -572,6 +574,19 @@ func TestCollectorCppTypedefUsing(t *testing.T) {
 	// 匿名 struct typedef：字段挂 typedef 名
 	AssertDef(t, gc, "Point", model.Type)
 	AssertFieldsOf(t, gc, "Point", []string{"x", "y"})
+
+	// 具名 struct typedef 同名：tag(STRUCT) 与别名(TYPE) 同 QN 共存，不产生 $2
+	kinds := map[model.ElementKind]bool{}
+	for _, def := range gc.Definitions() {
+		if def.Element.QualifiedName == "TagSame" {
+			kinds[def.Element.Kind] = true
+		}
+	}
+	if !kinds[model.Struct] || !kinds[model.Type] {
+		t.Errorf("TagSame kinds = %v, want both STRUCT and TYPE", kinds)
+	}
+	AssertNoDef(t, gc, "TagSame$2")
+	AssertFieldsOf(t, gc, "TagSame", []string{"n"})
 
 	// 别名使用
 	for _, n := range []string{"g_ulong", "g_myint", "g_ptr", "g_cb", "g_uint"} {

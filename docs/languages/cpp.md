@@ -380,6 +380,8 @@ type expr struct {
 | **函数式宏作类型名** | `class GTEST_1_TUPLE_(T) {` 被当函数调用，容器 QN 变形为 `T()` | `normalizeTypeNameFunctionMacros`：置空类型名后的宏实参，保留宏名作类型名 |
 | **测试宏体成孤儿块** | `TEST(a,b) { ... }` 的 body 成为文件级 compound_statement，内部 lambda/局部变量失去容器（httplib 99 个 lambda、protobuf 84 个 block） | `normalizeTestMacros`：改写为等长 `void <首个标识符>() {`。函数名取 args 首个标识符以保持与原始源码字节一致（Collector 从原始源码取文本）；字符串实参的 `TEST_CASE("...")` 无法字节对齐，仍保留为孤儿块（已知限制） |
 | **block/lambda 序号被同名变量挤占** | 容器内存在名为 `block` 的变量时，作用域块被消歧为 `block$2` | Lambda/ScopeBlock 使用独立计数键 `#block`/`#lambda`，与普通同名元素解耦 |
+| **tag 与 typedef 同名跨 Kind 误消歧** | `typedef struct cJSON {...} cJSON;` 的 struct tag 被挤成 `cJSON$2`（cJSON 3 处、httplib 2 处）；下游 `HTTPParser : public http_parser` 的 EXTEND 命中 typedef TYPE | `assignQN` 消歧键加入 Kind：`name+suffix+Kind`。QN+Kind 才是元素身份，跨 Kind 同名不触发 `$N`，tag 与 typedef 以同 QN 不同 Kind 共存 |
+| **原型形参幽灵 Variable** | `f(int a, char* b);` 原型的形参被建模为 `f(int,char*)::a` / `::b`（caffe 907、httplib 796、DuckX 294、cJSON 14、property_tree 10） | 纯声明（FunctionDecl/MethodDecl）不下钻参数列表；定义形参照常收集（形参在作用域内） |
 
 ## 8. 与 SPI 契约的对应
 

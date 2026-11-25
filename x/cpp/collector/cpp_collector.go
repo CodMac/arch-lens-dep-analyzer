@@ -479,6 +479,12 @@ func (c *Collector) collectBasicDefinitions(node coreast.Node, fCtx core.FileCon
 			}
 
 			if helper.IsScopeContainer(kind) {
+				// 纯声明（函数/方法原型）没有函数体，其参数不是变量：
+				// 不下钻参数列表，避免为原型产出 `f(int)::param` 这类幽灵 Variable。
+				// 定义（Function/Method）的形参仍在作用域内，照常收集。
+				if kind == model.FunctionDecl || kind == model.MethodDecl {
+					return
+				}
 				scopeQN := items[0].elem.QualifiedName
 				childOcc := make(map[string]int)
 				for i := 0; i < node.ChildCount(); i++ {
@@ -942,7 +948,10 @@ func (c *Collector) assignQN(it *identified, currentQN string, occurrences map[s
 		occurrences[key]++
 		name = fmt.Sprintf("%s$%d", elem.Name, occurrences[key])
 	default:
-		key := name + suffix
+		// 消歧键含 Kind：QN+Kind 才是元素身份，跨 Kind 同名（C 的 struct tag 与
+		// typedef 别名 `typedef struct X {...} X;`）不应触发 `$N`，否则 STRUCT 被
+		// 挤成 `X$2`，下游 EXTEND/成员解析错指 typedef。
+		key := name + suffix + "|" + string(elem.Kind)
 		occurrences[key]++
 		if occurrences[key] > 1 {
 			name = fmt.Sprintf("%s$%d", name, occurrences[key])
