@@ -461,3 +461,39 @@ func TestUnbalancedFallback(t *testing.T) {
 		t.Errorf("fallback should choose first branch")
 	}
 }
+
+// TestDirectiveInRawStringIgnored 原始字符串字面量内的 #if 0 不是条件编译指令（B2）。
+func TestDirectiveInRawStringIgnored(t *testing.T) {
+	src := []byte("const char* s = R\"(\n#if 0\nraw content\n#endif\n)\";\nint x;\n")
+	res := Project(src)
+	if len(res.Regions) != 0 || len(res.Dropped) != 0 || len(res.Dead) != 0 {
+		t.Errorf("raw string directives should be ignored, got regions=%d dropped=%d dead=%d",
+			len(res.Regions), len(res.Dropped), len(res.Dead))
+	}
+	if len(res.Source) != len(src) {
+		t.Fatalf("length changed %d -> %d", len(src), len(res.Source))
+	}
+	for _, want := range []string{"#if 0", "raw content", "#endif", "int x;"} {
+		if !bytes.Contains(res.Source, []byte(want)) {
+			t.Errorf("raw string content %q should be preserved", want)
+		}
+	}
+}
+
+// TestDirectiveInRawStringDelimiter 带自定义分隔符的原始字符串同样被忽略。
+func TestDirectiveInRawStringDelimiter(t *testing.T) {
+	src := []byte("auto s = u8R\"tag(\n#ifdef X\nbody\n#endif\n)tag\";\n")
+	res := Project(src)
+	if len(res.Regions) != 0 || len(res.Dropped) != 0 {
+		t.Errorf("raw string with delimiter should be ignored, got regions=%d dropped=%d", len(res.Regions), len(res.Dropped))
+	}
+}
+
+// TestDirectiveInNormalStringStillLineStartOnly 普通字符串内的 # 不会成指令（行首约束）。
+func TestDirectiveInNormalStringStillLineStartOnly(t *testing.T) {
+	src := []byte("const char* s = \"#if 0\";\nint x;\n")
+	res := Project(src)
+	if len(res.Regions) != 0 || len(res.Dropped) != 0 {
+		t.Errorf("inline string directive should be ignored")
+	}
+}

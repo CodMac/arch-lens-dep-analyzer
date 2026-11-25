@@ -3,7 +3,7 @@
 > 适用范围：`x/cpp/` · 与 [qn-format.md](../qn-format.md)（QN 契约）、[language-extension.md](../language-extension.md)（SPI 契约）互为补充
 >
 > 本文档回答「C/C++ 支持到什么程度」：元素/关系覆盖清单、声明-实现配对模型、条件编译策略、实现边界与已知限制。
-> 行为契约由 `x/cpp/testdata/e2e/baseline.golden.jsonl`（4325 行 = 1511 元素 + 2814 关系，LevelBalanced）锚定。
+> 行为契约由 `x/cpp/testdata/e2e/baseline.golden.jsonl`（4353 行 = 1522 元素 + 2831 关系，LevelBalanced）锚定。
 
 ## 1. 总体状态
 
@@ -27,7 +27,7 @@ C 与 C++ **共用同一套实现**（`x/cpp/`），仅 Parser 层按扩展名�
 | 阶段 | 入口 | 职责 | 详见 |
 |---|---|---|---|
 | Parser | `x/cpp/cpp_parser.go` + `x/cpp/preproc` | 条件编译双树（投影树 + 原始树）、宏归一化（等长置空）、分支回补、死区标注 | §5 |
-| Collector | `x/cpp/collector` | Step 0–6：文件元素 → include → 递归定义（QN 分配 / 匿名承载 / 条件标注 / 控制流声明作用域 / friend）→ 原始树补元素 → 分支回补 → 元数据增强（含 concept）→ namespace 汇总 → 展示字段 → 动作树根 | §2、§5.2–5.3 |
+| Collector | `x/cpp/collector` | Step 0–6：文件元素 → include/模块导入 → 递归定义（QN 分配 / 匿名承载 / 条件标注 / 控制流声明作用域 / friend）→ 原始树补元素 → 分支回补 → 元数据增强（含 concept / linkage / inline namespace）→ namespace 汇总 → 展示字段 → 动作树根 | §2、§5.2–5.3 |
 | Binder | `x/cpp/binder` | raw 类型文本 → QN，typedef/using 别名链递归展开 | §6.3 |
 | Extractor | `x/cpp/extractor` | 结构关系 + 动作关系 + Capture 派生；多树按字节区间去重 | §3、§5.5 |
 | Linker | `x/cpp/linker` | Contain 拓扑 + ImplLink 签名配对 | §4 |
@@ -164,7 +164,7 @@ Collector 末尾（Step 5，全部定义注册与 namespace 汇总之后）统�
 
 | 关系 | 说明 |
 |---|---|
-| Import | 文件级 `#include`。`"foo.h"`（项目内）按路径后缀匹配 File 元素；`<stdio.h>`（系统）产外部 File 符号。`cpp.rel.include.is_system` 标记 |
+| Import | 文件级 `#include`。`"foo.h"`（项目内）按路径后缀匹配 File 元素；`<stdio.h>`（系统）产外部 File 符号。`cpp.rel.include.is_system` 标记。C++20 `import foo;` / `import <x>;` / `import "x.h";` 同样合成 Import，`cpp.rel.import.is_module=true`；`export import` 另记 `cpp.rel.import.is_export=true` |
 | Contain | 层级拓扑：File → 顶层元素、Namespace → 子 Namespace、Namespace → File、类/结构体/枚举 → 成员、函数 → 局部变量/块/Lambda |
 | Extend | C++ 继承（`base_class_clause`），基类名按当前命名空间补全后解析 |
 | Parameter | 函数/方法形参类型（`cpp.rel.raw_text`） |
@@ -415,7 +415,7 @@ type expr struct {
 | 8 | **预处理指令位置** | `#include` 出现在任意位置（含条件分支内）均被收集为文件级 Import，不区分包含位置 |
 | 9 | **多继承** | `base_class_clause` 的多个基类各产一条 EXTEND；不区分 `virtual` 继承语义 |
 | 10 | **匿名 namespace** | 记名 `$anon`，不与外部链接语义区分；同文件重开归一为 `$anon`，跨文件各 TU 共享 QN 的解析歧义见 §2.3.2 |
-| 11 | **`extern "C"`** | `linkage_specification` 内的声明照常收集，不做 C/C++ 链接名区分 |
+| 11 | **`extern "C"`** | `linkage_specification` 内的元素照常收集，并在 Mores 记 `cpp.linkage="C"`；`inline namespace` 记 `cpp.namespace.is_inline=true`。不做 C/C++ 链接名改写（符号名不变） |
 | 12 | **头文件重复包含** | 无 include guard 求解；同一头文件被多个源 include 时各产一条 Import |
 | 13 | **外部类型链式断开** | 链式接收者为外部类型（如 `std::vector<T>::begin()`）时，其返回类型无源码符号可查，链在此处断开并退回短名兜底；但**直接**成员调用按外部类型归属（`vec.push_back()` → `std::vector::push_back`） |
 | 14 | **可调用对象 / 函数指针** | `obj(args)` 解析到声明类型的 `operator()`；函数指针变量调用不建模为外部函数（无匹配即不产 CALL） |
@@ -426,8 +426,8 @@ type expr struct {
 
 | # | 边界 | 现象 | 影响 | 状态 |
 |---|---|---|---|---|
-| B2 | **原始字符串内的条件指令被误投影** | `R"(...#if 0...#endif...)"` 被 `scanGroups` 当作真实条件组，内容被置空 | 原始字符串字面量内容被破坏，可能连带语法错误。普通字符串 `"#if 0"` 不受影响（指令须在行首）。三项目扫描暂未命中，风险低但存在 | 待修复 |
-| B3 | **跨分支同名类型/字段被幂等去重** | `#ifdef A struct S{int a;}; #else struct S{int b;};` → `S` 只保留首分支版本与标签，`S::b` 虽产出但挂在同一 `S` 下 | 另一分支的结构体定义/字段归属不准确，`cpp.condition` 只反映首个收集到的分支 | 待修复 |
+| B2 | **原始字符串内的条件指令被误投影** | `R"(...#if 0...#endif...)"` 曾被 `scanGroups` / `blankUnselected` 当作真实条件组，内容被置空 | 原始字符串字面量内容被破坏，可能连带语法错误 | **已修复**：`updateLexState` 跟踪原始字符串状态（含自定义分隔符），其内行首 `#` 不再识别为指令 |
+| B3 | **跨分支同名类型/字段被幂等去重** | `#ifdef A struct S{int a;}; #else struct S{int b;};` | 早期只保留首分支版本 | **已修复**：`$N` 消歧使第二分支产 `S$2`（各自带正确 `cpp.condition`）；同名字段产 `x` / `x$2` |
 | B5 | **原始树有 ERROR 的文件降级** | 原始树含 `ERROR` 时无法作为全分支树，退回逐分支投影；嵌套组合仍可能漏 | caffe 14 个、protobuf 35 个文件受影响（实测） | 已知代价 |
 | B6 | **多遍解析成本** | 原始树有 ERROR 的文件仍需解析 N+1 遍 | 极端头文件（如 cpp-httplib 单文件 23 分支）解析耗时线性放大；raw 无 ERROR 时已跳过 | 已知代价，暂不优化 |
 | B7 | **`$N` 元素增量** | 原始树补齐多分支同名符号时产生 `$N` 变体（实测 caffe +16、cpp-httplib +2，其余项目 0） | QN 集合相对单树方案有增量；属真实多分支定义，语义正确 | 已接受 |
@@ -470,6 +470,26 @@ type expr struct {
 | **控制流头部声明挂错作用域** | `if (int x = ...)`、`for (int i = ...)`、`catch (E e)` 的声明挂到函数体（`f()::x`/`f()::i`/`f()::e`），且第二个 `if` 内的读取误绑到第一个 `x` | Collector 新增 `collectControlFlowScope`：头部声明挂语句体块（`block$N`）；Resolver `scopeChain` 对语句头部节点补入对应块，避免跨语句/跨函数误绑 |
 | **C++20 concept 不产元素** | `concept Small = ...;` 无任何元素，约束关系不可见 | `concept_definition` 归 Type：`cpp.type.underlying` 记约束表达式，`cpp.is_declaration=false` |
 | **friend 声明被整体跳过** | `friend class X;` / `friend void f(T&);` 无元素、无关系，友元授权不可见 | 宿主类 Mores 记 `cpp.class.friend_types` / `cpp.class.friend_functions`；非限定友元函数注册为命名空间级 `FunctionDecl`；Extractor 产 `FRIEND` 关系 |
+| **C++20 module/import 产伪 VARIABLE** | `export module foo;` / `import bar;` 被 tree-sitter 当普通 declaration，产出 `module`/`bar` 伪 VARIABLE，且无 IMPORT | Collector 按源码文本拦截顶层 module/import：不产元素；模块名记 File 的 `cpp.module.name`；`import` 合成文件级 Import（`cpp.rel.import.is_module`，`export import` 另记 `is_export`） |
+| **原始字符串内条件指令被误投影** | `R"(...#if 0...#endif...)"` 的内容被置空 | `scanGroups` 与 `blankUnselected` 都跟踪原始字符串状态（含自定义分隔符），其内行首 `#` 不再识别为指令（B2） |
+| **缺少链接规范 / inline namespace 元数据** | `extern "C"` 与 `inline namespace` 无任何标记 | `enrichMetadata` 沿父链记录 `cpp.linkage="C"`；namespace 记 `cpp.namespace.is_inline=true` |
+
+### 7.3 Binder 阶段的已知边界（2026-11-25 审计）
+
+Binder 负责 raw 类型文本 → QN。以下缺陷均经探针实测，按优先级记录（修复计划见对应任务）：
+
+| # | 优先级 | 边界 | 实测现象 | 修复方向 |
+|---|---|---|---|---|
+| B-1 | P1 | **别名展开不感知 owner 作用域** | `Outer{using alias_t=int; Inner{using alias_t=float; alias_t v;}}` → `Outer::Inner::v` 的 `type_with_qn=int`（应为 float） | `expandAlias` 接收 `ownerQN`，先按 `BuildQN(scope,name)` 沿 `PkgOf` 上溯，再文件短名 |
+| B-2 | P1 | **跨文件同名别名全局扁平** | `a.cpp: typedef int value_type;` + `b.cpp: typedef float value_type;` → `A::v` 与 `B::v` 的 `type_with_qn` 都是 int | 别名查找文件优先；全局短名仅在唯一候选时使用 |
+| B-3 | P1 | **多词基本类型未识别** | `unsigned long long` / `long double` / `unsigned int` / `signed char` / `long long` 落为外部 CLASS 符号（LevelRaw 下 PARAMETER/TYPE_ARG 目标错误） | `IsPrimitive` 增加「全部 token ∈ 算术关键字集合」判定；`BaseTypeName` 剥 `volatile` |
+| B-4 | P2 | **模板别名展开退化** | `template<class T> using Vec = T*;` 的 `Vec<int> v` → `type_with_qn="T"`（无意义模板变量） | 展开结果为模板变量时保留别名自身 QN |
+| B-5 | P2 | **函数指针 typedef 丢形态** | `typedef void (*cb_t)(int);` 的 underlying 只记 `void`，`cb_t` 展开为 `void` | 已知限制，记录不修 |
+| B-6 | P2 | **元数据键魔法字符串** | `constants.TypeUnderlying+"_with_qn"` 为裸拼接且无消费方 | 定义 `TypeUnderlyingWithQN` 常量并明确用途或删除 |
+| B-7 | 边界 | **无 include 可见性** | 别名表全局生效，不检查 `#include` | 与 §2.3.2 per-TU 可见性同源，索引层设计边界 |
+| B-8 | 边界 | **`isTypeKind` 接受 Namespace** | 类型名与 namespace 同名时绑定到 namespace | 极罕见，记录不修 |
+
+> `concept` 的约束表达式曾进入别名表污染同名类型引用，已修复：元素带 `cpp.type.is_concept=true`，Binder 的别名表与底层类型绑定均跳过（见 §6.3）。
 
 ## 8. 与 SPI 契约的对应
 
@@ -490,9 +510,9 @@ type expr struct {
 
 - 三层测试 + e2e 黄金回归集，全部位于 `x/cpp/test/`。
 - 测试文件按语言归属拆分：`*_base_test.go`（C/C++ 共享）、`*_c_test.go`（C 独有）、`*_cpp_test.go`（C++ 独有）；共享断言集中在 `assert_helper.go`。
-- e2e 基线：`x/cpp/testdata/e2e/baseline.golden.jsonl`（1511 元素 + 2814 关系，LevelBalanced）。
-- 元素覆盖（基线实测）：FILE 89 / NAMESPACE 48 / CLASS 28 / STRUCT 117 / ENUM 22 / ENUM_CONSTANT 49 / TYPE 33 / MACRO 48 / FIELD 174 / FUNCTION 148 / FUNCTION_DECL 46 / METHOD 83 / METHOD_DECL 91 / VARIABLE 469 / SCOPE_BLOCK 38 / LAMBDA 28。
-- 关系覆盖（基线实测）：CONTAIN 1799 / USE 364 / ASSIGN 185 / TYPE_ARG 104 / CALL 87 / IMPL_LINK 70 / PARAMETER 58 / RETURN 35 / IMPORT 35 / EXTEND 24 / CAPTURE 24 / CAST 14 / CREATE 7 / THROW 6 / FRIEND 2。
+- e2e 基线：`x/cpp/testdata/e2e/baseline.golden.jsonl`（1522 元素 + 2831 关系，LevelBalanced）。
+- 元素覆盖（基线实测）：FILE 91 / NAMESPACE 49 / CLASS 28 / STRUCT 118 / ENUM 22 / ENUM_CONSTANT 49 / TYPE 33 / MACRO 48 / FIELD 176 / FUNCTION 149 / FUNCTION_DECL 49 / METHOD 83 / METHOD_DECL 91 / VARIABLE 470 / SCOPE_BLOCK 38 / LAMBDA 28。
+- 关系覆盖（基线实测）：CONTAIN 1812 / USE 364 / ASSIGN 185 / TYPE_ARG 104 / CALL 87 / IMPL_LINK 70 / PARAMETER 58 / IMPORT 39 / RETURN 35 / EXTEND 24 / CAPTURE 24 / CAST 14 / CREATE 7 / THROW 6 / FRIEND 2。
 - 基线（LevelBalanced）中 PARAMETER/RETURN 大幅减少，是因为当前样例的参数/返回类型多为基本类型（`int`/`void`），被外部符号降噪过滤；CONTAIN/USE/ASSIGN 等指向源码符号的关系不受影响。
 - 测试用例：
   | 测试 | 覆盖 |
@@ -512,6 +532,8 @@ type expr struct {
   | `TestCollectorCpp` | namespace/class/继承/模板/纯虚/访问级别/enum class/类外定义 |
   | `TestCollectorCppBase` | 基准元素：16 种 ElementKind 冒烟（File/Namespace/Class/Struct/Enum/EnumConstant/Function/FunctionDecl/Method/MethodDecl/Field/Type/Variable/Macro/Lambda/ScopeBlock） |
   | `TestCollectorCppNamespace` | 嵌套 namespace / C++17 `a::b` / inline / 匿名 `$anon` / alias / using / 重开归一（`reopen_ns` 无 `$2`） |
+  | `TestCollectorCppModule` | C++20 `export module` 记 File Mores、`import` 不产伪 VARIABLE |
+  | `TestCollectorCppLinkage` | `extern "C"` 元素记 `cpp.linkage`、`inline namespace` 记 `cpp.namespace.is_inline` |
   | `TestCollectorCppDeclDef` | 同文件声明+定义、头文件原型、前向声明覆盖、类外定义、extern 声明+定义、只声明不定义、原型形参不下钻 |
   | `TestCollectorCppClass` | 访问级别、嵌套 class/struct/enum、friend、static/const/mutable 成员、final、抽象类 |
   | `TestCollectorCppCtorDtor` | 默认/带参/explicit/拷贝/移动/双参构造、析构、`= default`/`= delete`、委托构造、成员初始化列表 |
@@ -543,6 +565,7 @@ type expr struct {
   | `TestExtractorCppCapture` | 值捕获/引用捕获/全捕获/嵌套 lambda/赋值推导/无捕获不产/lambda 内部变量不捕获/去重 |
   | `TestExtractorCppImplLink` | 1 头多源、签名、类外定义、static 不配对、只声明不配对、类内 inline 不配对 |
   | `TestExtractorCppFriend` | `friend class` / `friend` 函数 → FRIEND 关系（宿主类 → 友元类型/函数） |
+  | `TestExtractorCppModule` | C++20 模块导入合成 IMPORT（`cpp.rel.import.is_module` / `is_export`） |
   | `TestResolverCall` | 自由函数/成员/指针成员/静态/命名空间限定调用 |
   | `TestResolverCreate` | `new` 表达式 + 构造器 CALL |
   | `TestResolverUse` / `TestResolverAssign` | 变量/字段/枚举常量读写 |
@@ -568,7 +591,7 @@ type expr struct {
 - 包级单元测试（不依赖完整流水线）：
   - `core/global_context_test.go`：`TestGlobalContextCrossFileSameQN`（跨文件同 QN+Kind 共存）、`TestGlobalContextSameFileSameQN`（同文件同键幂等）、`TestGlobalContextDeclDefSameFile`（声明/定义同键时定义覆盖）。
   - `x/cpp/collector/normalize_test.go`：`TestNormalizeQualifiedCRLF`（剥 `\r`）、`TestNormalizeQualifiedLeadingGlobal`（剥前导 `::`）。
-  - `x/cpp/preproc/projector_test.go`：投影/宏归一化各形态（类型注解宏、返回类型宏、语句宏、测试宏、函数式宏作类型名、operator/尾随宏等）。
+  - `x/cpp/preproc/projector_test.go`：投影/宏归一化各形态（类型注解宏、返回类型宏、语句宏、测试宏、函数式宏作类型名、operator/尾随宏等）；原始字符串内的 `#if 0` 不被识别为指令（B2，含自定义分隔符）。
 
 ## 10. 测试命令
 

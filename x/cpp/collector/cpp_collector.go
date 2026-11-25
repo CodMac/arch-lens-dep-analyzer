@@ -12,6 +12,7 @@ package collector
 import (
 	"fmt"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 
@@ -420,6 +421,95 @@ func (c *Collector) handleInclude(node coreast.Node, fCtx core.FileContext) {
 	fCtx.AddImport(alias, info)
 }
 
+// moduleDirectiveRe 匹配 C++20 模块声明/导入（tree-sitter 不识别，按源码文本判定）。
+var moduleDirectiveRe = regexp.MustCompile(`^(?:export[ \t]+)?(import|module)\b[ \t]*(.*)$`)
+
+// moduleNameRe 校验具名模块名（a.b.c / a:b），避免把 `module = 1;` 这类同名变量误判。
+var moduleNameRe = regexp.MustCompile(`^[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*(?::[A-Za-z_]\w*)?$`)
+
+// handleModuleDirective 拦截顶层 C++20 module/import 指令：
+//   - `export module foo;` / `module foo;`：不产元素，模块名记到 File 的 Mores；
+//   - `module;` / `module :private;`：全局/私有模块片段，无名称，直接忽略；
+//   - `import foo;` / `import <vector>;` / `import "foo.h";` / `export import foo;`：
+//     不产伪 VARIABLE，合成文件级 Import（cpp.import.is_module=true）。
+//
+// 返回 true 表示节点已被消费，调用方不再下钻。
+func (c *Collector) handleModuleDirective(node coreast.Node, fCtx core.FileContext) bool {
+	if node == nil || node.Parent() == nil || node.Parent().Kind() != "translation_unit" {
+		return false
+	}
+	switch node.Kind() {
+	case "declaration", "expression_statement", "labeled_statement":
+	default:
+		return false
+	}
+	src := *fCtx.SourceBytes()
+	text := strings.TrimSpace(helper.GetNodeContent(node, src))
+	m := moduleDirectiveRe.FindStringSubmatch(text)
+	if m == nil {
+		return false
+	}
+	kw := m[1]
+	rest := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(m[2]), ";"))
+	isExport := strings.HasPrefix(text, "export")
+
+	if kw == "module" {
+		// 全局模块片段（module;）与私有模块片段（module :private;）无模块名。
+		if rest == "" || strings.HasPrefix(rest, ":") {
+			return true
+		}
+		// 非模块名形态（如 `module = 1;` 的同名变量）不当作模块声明。
+		if !moduleNameRe.MatchString(rest) {
+			return false
+		}
+		if entry, ok := fCtx.FindByQualifiedName(fCtx.FilePath()); ok {
+			mores := entry.Element.GetMores()
+			mores[constants.ModuleName] = rest
+			if isExport {
+				mores[constants.ModuleIsExport] = true
+			}
+		}
+		return true
+	}
+
+	// import：区分头文件单元（<...> / "..."）与具名模块。
+	name, isSystem := "", false
+	switch {
+	case strings.HasPrefix(rest, "<") && strings.HasSuffix(rest, ">"):
+		name, isSystem = strings.TrimSpace(rest[1:len(rest)-1]), true
+	case strings.HasPrefix(rest, `"`) && strings.HasSuffix(rest, `"`):
+		name = strings.TrimSpace(rest[1 : len(rest)-1])
+	case strings.HasPrefix(rest, ":") && moduleNameRe.MatchString("m"+rest):
+		// 模块分区导入（import :part;）。
+		name = rest
+	case moduleNameRe.MatchString(rest):
+		name = rest
+	default:
+		// 非模块导入形态（如 `import(x);` 的同名函数调用），按普通语句处理。
+		return false
+	}
+	if name == "" {
+		return true
+	}
+	alias := name
+	if i := strings.LastIndexAny(name, "/\\"); i >= 0 {
+		alias = name[i+1:]
+	}
+	info := &core.ImportInfo{
+		Kind:          model.File,
+		Alias:         alias,
+		RawImportPath: name,
+		Location:      helper.ExtractLocation(node, fCtx.FilePath()),
+	}
+	info.SetAttr(constants.ImportAttrIsModule, true)
+	info.SetAttr(constants.ImportAttrIsSystem, isSystem)
+	if isExport {
+		info.SetAttr(constants.ImportAttrIsExport, true)
+	}
+	fCtx.AddImport(alias, info)
+	return true
+}
+
 // collectBasicDefinitions 递归收集定义。
 // currentQN 为当前作用域 QN；tmplParams 为模板参数原文。
 func (c *Collector) collectBasicDefinitions(node coreast.Node, fCtx core.FileContext, currentQN, tmplParams string, occurrences map[string]int) {
@@ -438,6 +528,12 @@ func (c *Collector) collectBasicDefinitions(node coreast.Node, fCtx core.FileCon
 
 	// #if 0 死区：原始树会保留死区代码，跳过其元素。
 	if node.IsNamed() && c.inDeadZone(fCtx.FilePath(), node) {
+		return
+	}
+
+	// C++20 module / import：tree-sitter 无对应语法，会退化为普通 declaration /
+	// expression_statement（产出伪 VARIABLE）。此处拦截并合成 IMPORT。
+	if c.handleModuleDirective(node, fCtx) {
 		return
 	}
 
@@ -1593,6 +1689,10 @@ func (c *Collector) enrichMetadata(fCtx core.FileContext) {
 		if vis := visibilityOf(node, src); vis != "" {
 			mores[constants.Visibility] = vis
 		}
+		// extern "C" { ... } 内的元素记录链接规范。
+		if lang := linkageOf(node, src); lang != "" {
+			mores[constants.Linkage] = lang
+		}
 
 		switch elem.Kind {
 		case model.File:
@@ -1613,6 +1713,10 @@ func (c *Collector) enrichMetadata(fCtx core.FileContext) {
 			c.enrichEnum(elem, node, src)
 		case model.Type:
 			c.enrichType(elem, node, src)
+		case model.Namespace:
+			if countChildToken(node, "inline") > 0 {
+				mores[constants.NamespaceIsInline] = true
+			}
 		}
 	}
 }
@@ -1959,6 +2063,23 @@ func isGlobalDeclaration(node coreast.Node) bool {
 		}
 	}
 	return false
+}
+
+// linkageOf 返回元素最近外层链接规范（extern "C" -> "C"）；无则空。
+func linkageOf(node coreast.Node, src []byte) string {
+	for anc := node.Parent(); anc != nil; anc = anc.Parent() {
+		if anc.Kind() != "linkage_specification" {
+			continue
+		}
+		for i := 0; i < anc.NamedChildCount(); i++ {
+			ch := anc.NamedChild(i)
+			if ch != nil && ch.Kind() == "string_literal" {
+				return strings.Trim(helper.GetNodeContent(ch, src), `"`)
+			}
+		}
+		return ""
+	}
+	return ""
 }
 
 // visibilityOf 返回成员所在的访问级别（最近的前置 access_specifier）。

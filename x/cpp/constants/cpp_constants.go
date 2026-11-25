@@ -93,6 +93,15 @@ const (
 	// IsDeclaration 通用声明标记（前向声明/extern 声明）-> bool
 	IsDeclaration = "cpp.is_declaration"
 
+	// NamespaceIsInline inline namespace（C++11）-> bool
+	NamespaceIsInline = "cpp.namespace.is_inline"
+	// Linkage 元素所在链接规范（extern "C" -> "C"）-> string
+	Linkage = "cpp.linkage"
+	// ModuleName 文件所属 C++20 模块名（`export module foo;`）-> string
+	ModuleName = "cpp.module.name"
+	// ModuleIsExport 模块声明是否带 export -> bool
+	ModuleIsExport = "cpp.module.is_export"
+
 	// FileLOC 文件有效行数 -> int
 	FileLOC = "cpp.file.metrics.loc"
 	// FileRawLOC 文件行数 -> int
@@ -116,6 +125,10 @@ const (
 	RelIncludeIsSystem = "cpp.rel.include.is_system"
 	// RelImplLinkSignature ImplLink 配对签名 -> string
 	RelImplLinkSignature = "cpp.rel.impl_link.signature"
+	// RelImportIsModule 是否为 C++20 模块导入（import foo; / import <x>;）-> bool
+	RelImportIsModule = "cpp.rel.import.is_module"
+	// RelImportIsExport 是否为再导出导入（export import foo;）-> bool
+	RelImportIsExport = "cpp.rel.import.is_export"
 )
 
 // =============================================================================
@@ -123,6 +136,10 @@ const (
 // =============================================================================
 
 const (
-	// ImportAttrIsSystem 是否为系统/三方头文件 (#include <...>) -> bool
+	// ImportAttrIsSystem 是否为系统/三方头文件 (#include <...> / import <...>) -> bool
 	ImportAttrIsSystem = "cpp.include.is_system"
+	// ImportAttrIsModule 是否为 C++20 模块导入（import foo;）-> bool
+	ImportAttrIsModule = "cpp.import.is_module"
+	// ImportAttrIsExport 是否为再导出导入（export import foo;）-> bool
+	ImportAttrIsExport = "cpp.import.is_export"
 )

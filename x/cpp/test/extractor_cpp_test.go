@@ -420,3 +420,30 @@ func TestExtractorCppFriend(t *testing.T) {
 			r.Target.QualifiedName == "friend_func(Outer&)"
 	})
 }
+
+// TestExtractorCppModule C++20 模块导入合成 IMPORT（cpp.import.is_module）。
+func TestExtractorCppModule(t *testing.T) {
+	paths := ResolvePaths(t, "collector/cpp/module", "*.cpp")
+	ec := RunPipeline(t, "x/cpp/testdata", paths, core.LevelRaw)
+
+	mods := map[string]bool{}
+	for _, r := range ec.Relations {
+		if r.Type != model.Import || r.Source.QualifiedName != "collector/cpp/module/mod.cpp" {
+			continue
+		}
+		if v, _ := r.Mores[constants.RelImportIsModule].(bool); !v {
+			continue
+		}
+		mods[r.Target.QualifiedName] = true
+		if r.Target.QualifiedName == "reexport.mod" {
+			if v, _ := r.Mores[constants.RelImportIsExport].(bool); !v {
+				t.Errorf("reexport.mod should be marked is_export")
+			}
+		}
+	}
+	for _, want := range []string{"vector", "local.h", "other.mod", "reexport.mod"} {
+		if !mods[want] {
+			t.Errorf("missing module import target %q (got %v)", want, mods)
+		}
+	}
+}

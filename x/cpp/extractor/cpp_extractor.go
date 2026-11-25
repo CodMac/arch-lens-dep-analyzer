@@ -94,15 +94,22 @@ func (e *Extractor) extractHierarchy(fCtx core.FileContext, gc core.GlobalContex
 				if target == nil {
 					continue
 				}
+				mores := map[string]interface{}{
+					constants.RelRawText:         imp.RawImportPath,
+					constants.RelIncludeIsSystem: imp.BoolAttr(constants.ImportAttrIsSystem),
+				}
+				if imp.BoolAttr(constants.ImportAttrIsModule) {
+					mores[constants.RelImportIsModule] = true
+				}
+				if imp.BoolAttr(constants.ImportAttrIsExport) {
+					mores[constants.RelImportIsExport] = true
+				}
 				rels = append(rels, &model.DependencyRelation{
 					Type:     model.Import,
 					Source:   fileSource,
 					Target:   target,
 					Location: imp.Location,
-					Mores: map[string]interface{}{
-						constants.RelRawText:         imp.RawImportPath,
-						constants.RelIncludeIsSystem: imp.BoolAttr(constants.ImportAttrIsSystem),
-					},
+					Mores:    mores,
 				})
 			}
 		}

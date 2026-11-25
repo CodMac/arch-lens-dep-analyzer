@@ -167,6 +167,8 @@ func scanGroups(src []byte) []*group {
 	var stack []*group
 	pos := 0
 	inBlockComment := false
+	inRawString := false
+	rawDelim := ""
 	continued := false
 
 	for pos < len(src) {
@@ -179,7 +181,8 @@ func scanGroups(src []byte) []*group {
 		line := src[pos:eol]
 
 		isDirective := false
-		if !continued && !inBlockComment {
+		// 原始字符串字面量内部的行首 `#` 不是预处理指令（B2）。
+		if !continued && !inBlockComment && !inRawString {
 			if m := directiveRe.FindSubmatch(line); m != nil {
 				isDirective = true
 				kw := string(m[1])
@@ -206,9 +209,9 @@ func scanGroups(src []byte) []*group {
 			}
 		}
 
-		// 更新块注释与续行状态（仅用于避免把注释/宏体内的 # 当指令）。
+		// 更新块注释/原始字符串与续行状态（仅用于避免把注释/宏体/原始字符串内的 # 当指令）。
 		if !isDirective {
-			updateLexState(line, &inBlockComment)
+			updateLexState(line, &inBlockComment, &inRawString, &rawDelim)
 			continued = endsWithBackslash(line)
 		} else {
 			continued = false
@@ -271,6 +274,9 @@ func blankUnselected(out, src []byte, groups []*group, chosen map[int]int, opts 
 
 	pos := 0
 	var stack []*group
+	inBlockComment := false
+	inRawString := false
+	rawDelim := ""
 	for pos < len(src) {
 		eol := bytes.IndexByte(src[pos:], '\n')
 		if eol < 0 {
@@ -280,37 +286,42 @@ func blankUnselected(out, src []byte, groups []*group, chosen map[int]int, opts 
 		}
 		line := src[pos:eol]
 
-		if m := directiveRe.FindSubmatch(line); m != nil {
-			switch string(m[1]) {
-			case "ifdef", "ifndef", "if":
-				if g, ok := groupAt[pos]; ok {
-					stack = append(stack, g)
+		if !inBlockComment && !inRawString {
+			if m := directiveRe.FindSubmatch(line); m != nil {
+				switch string(m[1]) {
+				case "ifdef", "ifndef", "if":
+					if g, ok := groupAt[pos]; ok {
+						stack = append(stack, g)
+					}
+				case "endif":
+					if len(stack) > 0 {
+						stack = stack[:len(stack)-1]
+					}
 				}
-			case "endif":
-				if len(stack) > 0 {
-					stack = stack[:len(stack)-1]
-				}
-			}
-			// 指令行整行置空；若为续行指令（如多行 #define/#if），其续行也必须
-			// 一并置空，否则残留的宏体/条件片段会变成游离代码导致 syntax ERROR。
-			blank(out, pos, eol)
-			for endsWithBackslash(line) {
-				pos = eol + 1
-				if pos >= len(src) {
-					break
-				}
-				eol = bytes.IndexByte(src[pos:], '\n')
-				if eol < 0 {
-					eol = len(src)
-				} else {
-					eol += pos
-				}
-				line = src[pos:eol]
+				// 指令行整行置空；若为续行指令（如多行 #define/#if），其续行也必须
+				// 一并置空，否则残留的宏体/条件片段会变成游离代码导致 syntax ERROR。
 				blank(out, pos, eol)
+				for endsWithBackslash(line) {
+					pos = eol + 1
+					if pos >= len(src) {
+						break
+					}
+					eol = bytes.IndexByte(src[pos:], '\n')
+					if eol < 0 {
+						eol = len(src)
+					} else {
+						eol += pos
+					}
+					line = src[pos:eol]
+					blank(out, pos, eol)
+				}
+				pos = eol + 1
+				continue
 			}
-			pos = eol + 1
-			continue
 		}
+
+		// 非指令行：更新块注释/原始字符串状态，供后续行判定指令。
+		updateLexState(line, &inBlockComment, &inRawString, &rawDelim)
 
 		active, inDead := true, false
 		for _, g := range stack {
@@ -419,10 +430,21 @@ func bracketBalance(src []byte, from, to int) int {
 	return depth
 }
 
-// updateLexState 跟踪块注释状态（极简：只处理 /* 与 */）。
-func updateLexState(line []byte, inBlock *bool) {
+// updateLexState 跟踪块注释与原始字符串字面量状态。
+// 原始字符串 R"delim( ... )delim" 可跨行，其内部的 `#if 0` 等行首文本不是指令（B2）。
+func updateLexState(line []byte, inBlock *bool, inRaw *bool, rawDelim *string) {
 	i := 0
 	for i < len(line) {
+		if *inRaw {
+			end := []byte(")" + *rawDelim + "\"")
+			if j := bytes.Index(line[i:], end); j >= 0 {
+				i += j + len(end)
+				*inRaw = false
+				*rawDelim = ""
+				continue
+			}
+			return
+		}
 		if *inBlock {
 			j := bytes.Index(line[i:], []byte("*/"))
 			if j < 0 {
@@ -439,6 +461,36 @@ func updateLexState(line []byte, inBlock *bool) {
 			*inBlock = true
 			i += 2
 			continue
+		}
+		// 普通字符串/字符字面量：整体跳过，避免把其中的 R"( 误判为原始字符串起点。
+		if line[i] == '"' || line[i] == '\'' {
+			quote := line[i]
+			i++
+			for i < len(line) {
+				if line[i] == '\\' {
+					i += 2
+					continue
+				}
+				if line[i] == quote {
+					i++
+					break
+				}
+				i++
+			}
+			continue
+		}
+		// 原始字符串起点：R"delim(（允许 u8/u/U/L 前缀，前缀不影响识别）。
+		if line[i] == 'R' && i+1 < len(line) && line[i+1] == '"' {
+			j := i + 2
+			for j < len(line) && line[j] != '(' && line[j] != '"' && j-i-2 <= 16 {
+				j++
+			}
+			if j < len(line) && line[j] == '(' {
+				*inRaw = true
+				*rawDelim = string(line[i+2 : j])
+				i = j + 1
+				continue
+			}
 		}
 		i++
 	}

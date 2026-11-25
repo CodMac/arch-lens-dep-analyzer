@@ -1262,3 +1262,36 @@ func TestCollectorCppCrossFileSameQN(t *testing.T) {
 		t.Fatalf("main() definitions across files = %v, want %v", got, want)
 	}
 }
+
+// TestCollectorCppModule C++20 module/import：不产伪 VARIABLE，合成模块导入。
+func TestCollectorCppModule(t *testing.T) {
+	gc := collectCpp(t, "module")
+
+	// 模块声明记到 File 元素，不产元素。
+	AssertMores(t, gc, "collector/cpp/module/mod.cpp", constants.ModuleName, "demo.core")
+	AssertMores(t, gc, "collector/cpp/module/mod.cpp", constants.ModuleIsExport, true)
+	for _, qn := range []string{"module", "import", "vector", "other", "reexport", "private"} {
+		AssertNoDef(t, gc, qn)
+	}
+
+	// 正常声明照常收集。
+	AssertDef(t, gc, "answer()", model.Function)
+}
+
+// TestCollectorCppLinkage extern "C" 链接规范与 inline namespace 元数据。
+func TestCollectorCppLinkage(t *testing.T) {
+	gc := collectCpp(t, "linkage")
+
+	AssertMores(t, gc, "v1", constants.NamespaceIsInline, true)
+	AssertDef(t, gc, "v1::inline_fn()", model.FunctionDecl)
+	AssertMores(t, gc, "c_func(int)", constants.Linkage, "C")
+	AssertMores(t, gc, "c_var", constants.Linkage, "C")
+	AssertMores(t, gc, "CStruct", constants.Linkage, "C")
+	AssertMores(t, gc, "c_direct()", constants.Linkage, "C")
+
+	// inline namespace 内的元素不属于 extern "C"。
+	elem := FindDef(t, gc, "v1::inline_fn()")
+	if _, ok := elem.GetMores()[constants.Linkage]; ok {
+		t.Errorf("v1::inline_fn should not have linkage")
+	}
+}
