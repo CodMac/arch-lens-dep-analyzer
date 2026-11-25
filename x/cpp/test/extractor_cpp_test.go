@@ -584,3 +584,14 @@ func TestExtractorCppUsingDecl(t *testing.T) {
 		})
 	}
 }
+
+// TestExtractorCppCallTemplateArg 调用表达式模板实参产 TYPE_ARG。
+func TestExtractorCppCallTemplateArg(t *testing.T) {
+	paths := ResolvePaths(t, "extractor/cpp/call_targ", "*.cpp")
+	_, rels := RunExtraction(t, "x/cpp/testdata", paths)
+
+	FindRel(t, rels, func(r *model.DependencyRelation) bool {
+		return r.Type == model.TypeArg && r.Source.QualifiedName == "ct_fn()" &&
+			r.Target.QualifiedName == "CtFoo"
+	})
+}

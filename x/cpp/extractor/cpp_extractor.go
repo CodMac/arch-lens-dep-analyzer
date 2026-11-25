@@ -568,6 +568,38 @@ func (ac *actionCtx) handleCall(node coreast.Node) {
 		constants.RelRawText: helper.GetNodeContent(fn, *ac.fCtx.SourceBytes()),
 		constants.RelAstKind: "call_expression",
 	})
+	ac.emitCallTemplateArgs(source, fn)
+}
+
+// emitCallTemplateArgs 提取调用表达式模板实参的类型依赖（make_shared<Foo>() → TYPE_ARG Foo）。
+func (ac *actionCtx) emitCallTemplateArgs(source *model.CodeElement, fn coreast.Node) {
+	if fn == nil || fn.Kind() != "template_function" {
+		return
+	}
+	var args coreast.Node
+	for i := 0; i < fn.NamedChildCount(); i++ {
+		if c := fn.NamedChild(i); c != nil && c.Kind() == "template_argument_list" {
+			args = c
+			break
+		}
+	}
+	if args == nil {
+		return
+	}
+	for i := 0; i < args.NamedChildCount(); i++ {
+		arg := args.NamedChild(i)
+		if arg == nil || arg.Kind() != "type_descriptor" {
+			continue
+		}
+		raw := helper.GetNodeContent(arg, *ac.fCtx.SourceBytes())
+		target := ac.resolver.ResolveType(ac.gc, ac.fCtx, raw, model.Class)
+		if target == nil || target.Kind == model.Primitive {
+			continue
+		}
+		ac.add(model.TypeArg, source, target, arg, map[string]interface{}{
+			constants.RelRawText: raw,
+		})
+	}
 }
 
 // isTypeElementKind 判断元素是否为类型（转换目标 / typedef 构造）。
