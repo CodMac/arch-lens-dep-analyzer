@@ -472,3 +472,23 @@ func TestExtractorCppSingleLetterType(t *testing.T) {
 		return r.Type == model.Return && r.Source.QualifiedName == "make_t()" && r.Target.QualifiedName == "T"
 	})
 }
+
+// TestExtractorCppNamedParamAlias 命名参数应使用 Binder 的作用域化 QN，
+// 而不是回退到 raw 文本（否则嵌套同名别名会命中外层）。
+func TestExtractorCppNamedParamAlias(t *testing.T) {
+	paths := ResolvePaths(t, "extractor/cpp/param_alias", "*.cpp")
+	_, rels := RunExtraction(t, "x/cpp/testdata", paths)
+
+	FindRel(t, rels, func(r *model.DependencyRelation) bool {
+		return r.Type == model.Parameter &&
+			r.Source.QualifiedName == "O::I::f(AA)" &&
+			r.Target.QualifiedName == "YY"
+	})
+	// 不应解析到外层别名 O::AA。
+	if HasRel(rels, func(r *model.DependencyRelation) bool {
+		return r.Type == model.Parameter && r.Source.QualifiedName == "O::I::f(AA)" &&
+			r.Target.QualifiedName == "O::AA"
+	}) {
+		t.Errorf("parameter AA should resolve to inner YY, not outer O::AA")
+	}
+}

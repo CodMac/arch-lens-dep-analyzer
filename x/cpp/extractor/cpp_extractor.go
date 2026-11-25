@@ -280,7 +280,8 @@ func (e *Extractor) extractSignatureRels(fCtx core.FileContext, gc core.GlobalCo
 			}
 			var target *model.CodeElement
 			if i < len(qnParams) {
-				if t := e.lookupTypeQN(gc, fCtx, qnParams[i]); t != nil {
+				// WithQN 元素形如 "QN name"（命名参数），查找前剥离末尾参数名。
+				if t := e.lookupTypeQN(gc, fCtx, paramTypeOnly(qnParams[i])); t != nil {
 					target = t
 				}
 			}
