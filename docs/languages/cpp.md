@@ -202,19 +202,22 @@ Collector 末尾（Step 5，全部定义注册与 namespace 汇总之后）统�
 |---|---|
 | 1 头 ↔ 1 源（`util.h` ↔ `util.cpp`） | 签名配对自然命中 |
 | 1 头 ↔ 多源（`big.h` 声明 5 个函数，分散在多个源文件定义） | 签名配对跨文件命中 |
-| `static` 函数（无声明） | **不参与配对** |
+| `static` 自由函数（内部链接） | **不参与配对** |
+| `static` 成员函数（类内声明 + 类外定义） | **参与配对**（外部链接） |
+| 同一函数在多个头文件声明 | 定义与**全部**声明分别建链 |
 | 只声明无定义（`extern int extFunc()`） | 声明照常产出，**不建 ImplLink** |
 
 ### 4.2 签名格式
 
 ```
-<完整 QN>(<参数类型列表>)
+<函数名 QN（不含参数列表）>(<规范化参数类型列表>)
 ```
 
-例：`add(int,int)(int,int)`、`app::Box::twice(int)(int)`。
+例：`add(int,int)`、`app::Box::twice(int)`、`ns::C::operator=(const Widget&)`。
 
-- 完整 QN 含 namespace / 类前缀，可区分重载与同名。
-- 参数类型取 `cpp.function.parameters` 的类型部分（不含参数名）。
+- 函数名 QN 含 namespace / 类前缀，可区分重载与同名；尾部参数列表先剥离，避免与参数列表重复。
+- 参数类型以 Binder 的 `cpp.function.parameters_with_qn` 为基（已展开 typedef/using、剥离 `struct/class/union/enum` tag、数组/指针退化），再从原始文本补回 `const`/指针/引用限定，保证 `f(S)` 与 `f(const S&)` 不误并。
+- 基本类型等价拼写归一：`unsigned`→`unsigned int`、`signed`→`int`、`long int`→`long`、`unsigned long int`→`unsigned long`、`short int`→`short`。
 - 签名写入关系 Mores `cpp.rel.impl_link.signature`。
 
 ### 4.3 方向
@@ -508,6 +511,15 @@ Binder 负责 raw 类型文本 → QN。以下缺陷均经探针实测，按优�
 
 > `concept` 的约束表达式曾进入别名表污染同名类型引用，已修复：元素带 `cpp.type.is_concept=true`，Binder 的别名表与底层类型绑定均跳过（见 §6.3）。
 
+### 7.4 Linker 阶段的已知边界（2026-11-25 审计）
+
+| # | 边界 | 说明 |
+|---|---|---|
+| L-1 | const/ref 限定符重载坍缩 | QN 不含 `const`/`&` 限定符，`int q() const;` 与 `int q();` 同 QN+Kind+Path 被全局索引去重，只保留一个元素/一条 ImplLink。属 Collector/QN 层问题（声明路径不做消歧、类外定义走限定名早返回），修复需改 QN 契约，记录待后续 |
+| L-2 | 链接规范不参与签名 | `extern "C"` 与 C++ 链接、匿名 namespace 内部链接的同名同参函数按签名合并；同一程序内混用属 ODR 违规，极罕见 |
+| L-3 | 无 OVERRIDE 关系 | `model.OVERRIDE` 全项目未产出；C++ 虚函数覆盖需 Collector 建模 `virtual`/`override`，非 Linker 单层可解 |
+| L-4 | ImplLink 无 Location | 仅记签名，定位由 Source/Target 元素承载 |
+
 ## 8. 与 SPI 契约的对应
 
 | SPI | C/C++ 实现 | 说明 |
@@ -527,9 +539,9 @@ Binder 负责 raw 类型文本 → QN。以下缺陷均经探针实测，按优�
 
 - 三层测试 + e2e 黄金回归集，全部位于 `x/cpp/test/`。
 - 测试文件按语言归属拆分：`*_base_test.go`（C/C++ 共享）、`*_c_test.go`（C 独有）、`*_cpp_test.go`（C++ 独有）；共享断言集中在 `assert_helper.go`。
-- e2e 基线：`x/cpp/testdata/e2e/baseline.golden.jsonl`（1610 元素 + 2970 关系，LevelBalanced）。
-- 元素覆盖（基线实测）：FILE 103 / NAMESPACE 51 / CLASS 28 / STRUCT 137 / ENUM 22 / ENUM_CONSTANT 49 / TYPE 41 / MACRO 48 / FIELD 200 / FUNCTION 155 / FUNCTION_DECL 53 / METHOD 83 / METHOD_DECL 95 / VARIABLE 478 / SCOPE_BLOCK 39 / LAMBDA 28。
-- 关系覆盖（基线实测）：CONTAIN 1902 / USE 370 / ASSIGN 192 / TYPE_ARG 127 / CALL 90 / IMPL_LINK 70 / PARAMETER 64 / IMPORT 39 / RETURN 36 / EXTEND 27 / CAPTURE 24 / CAST 14 / CREATE 7 / THROW 6 / FRIEND 2。
+- e2e 基线：`x/cpp/testdata/e2e/baseline.golden.jsonl`（1677 元素 + 3152 关系，LevelBalanced）。
+- 元素覆盖（基线实测）：FILE 113 / NAMESPACE 59 / CLASS 30 / STRUCT 138 / ENUM 22 / ENUM_CONSTANT 49 / TYPE 42 / MACRO 53 / FIELD 201 / FUNCTION 165 / FUNCTION_DECL 65 / METHOD 86 / METHOD_DECL 97 / VARIABLE 490 / SCOPE_BLOCK 39 / LAMBDA 28。
+- 关系覆盖（基线实测）：CONTAIN 2035 / USE 383 / ASSIGN 192 / TYPE_ARG 131 / CALL 90 / IMPL_LINK 88 / PARAMETER 73 / IMPORT 44 / RETURN 36 / EXTEND 27 / CAPTURE 24 / CAST 14 / CREATE 7 / THROW 6 / FRIEND 2。
 - 基线（LevelBalanced）中 PARAMETER/RETURN 大幅减少，是因为当前样例的参数/返回类型多为基本类型（`int`/`void`），被外部符号降噪过滤；CONTAIN/USE/ASSIGN 等指向源码符号的关系不受影响。
 - 测试用例：
   | 测试 | 覆盖 |
@@ -587,6 +599,13 @@ Binder 负责 raw 类型文本 → QN。以下缺陷均经探针实测，按优�
   | `TestExtractorCppDesignatedInit` | 指定初始化 `P p{.x=1}` → 字段 ASSIGN |
   | `TestExtractorCppUsingDecl` | `using ns::f;` / `using Base::m;` / `namespace na = ns;` → USE |
   | `TestExtractorCppCallTemplateArg` | 调用表达式模板实参 `make_shared<Foo>()` → `TYPE_ARG Foo` |
+  | `TestExtractorCppImplLinkSignature` | ImplLink 签名规范化：typedef 别名 / struct tag / 数组↔指针 / 基本类型拼写 / const&指针重载区分 |
+  | `TestExtractorCppImplLinkMultiDecl` | 同一函数多声明全部建 ImplLink |
+  | `TestExtractorCppImplLinkStatic` | static 成员函数配对、static 自由函数不配对 |
+  | `TestExtractorCppNestedNamespace` | C++17 嵌套 namespace 中间层级元素与边、无悬空 Namespace→File |
+  | `TestExtractorCppOutOfLineFileRoot` | 类外/跨文件定义产 File→元素 边 |
+  | `TestLinkerCppTopology` | 文件/命名空间拓扑：File→顶层元素、Namespace→SubNamespace/File、类外定义文件根、类内成员非文件子节点 |
+  | `TestLinkerCppImplLinkDirection` | ImplLink 方向定义→声明 |
   | `TestResolverCall` | 自由函数/成员/指针成员/静态/命名空间限定调用 |
   | `TestResolverCreate` | `new` 表达式 + 构造器 CALL |
   | `TestResolverUse` / `TestResolverAssign` | 变量/字段/枚举常量读写 |
