@@ -492,3 +492,17 @@ func TestExtractorCppNamedParamAlias(t *testing.T) {
 		t.Errorf("parameter AA should resolve to inner YY, not outer O::AA")
 	}
 }
+
+// TestExtractorCppCaseEnumUse case 标签中的枚举常量应产 USE。
+func TestExtractorCppCaseEnumUse(t *testing.T) {
+	paths := ResolvePaths(t, "extractor/cpp/case_use", "*.cpp")
+	_, rels := RunExtraction(t, "x/cpp/testdata", paths)
+
+	for _, want := range []string{"Color::RED", "Color::GREEN"} {
+		target := want
+		FindRel(t, rels, func(r *model.DependencyRelation) bool {
+			return r.Type == model.Use && r.Source.QualifiedName == "f(Color)::block$1" &&
+				r.Target.QualifiedName == target
+		})
+	}
+}

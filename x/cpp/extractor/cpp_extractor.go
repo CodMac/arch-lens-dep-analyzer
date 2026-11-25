@@ -884,7 +884,7 @@ func isUsePosition(node coreast.Node) bool {
 		"type_definition", "alias_declaration", "preproc_def", "preproc_function_def",
 		"qualified_identifier", "namespace_definition", "template_parameter_list",
 		"struct_specifier", "class_specifier", "enum_specifier", "enumerator",
-		"call_expression", "field_expression", "lambda_expression", "case_statement",
+		"call_expression", "field_expression", "lambda_expression",
 		"preproc_ifdef", "preproc_if", "preproc_elif", "preproc_defined", "preproc_call":
 		return false
 	}
