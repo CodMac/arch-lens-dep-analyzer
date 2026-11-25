@@ -668,3 +668,36 @@ func TestExtractorCppImplLinkStatic(t *testing.T) {
 		t.Errorf("static free function should not be ImplLink-paired")
 	}
 }
+
+// TestExtractorCppNestedNamespace C++17 嵌套 namespace 创建中间层级元素与边。
+func TestExtractorCppNestedNamespace(t *testing.T) {
+	paths := ResolveTree(t, "linker/cpp/nested_ns")
+	ec := RunPipeline(t, "x/cpp/testdata", paths, core.LevelRaw)
+
+	// 每个前缀都是真实元素。
+	for _, qn := range []string{"na", "na::nb", "na::nb::nc"} {
+		AssertDef(t, ec.GC, qn, model.Namespace)
+	}
+	// 层级边 na → na::nb → na::nb::nc。
+	for _, pair := range [][2]string{{"na", "na::nb"}, {"na::nb", "na::nb::nc"}} {
+		src, tgt := pair[0], pair[1]
+		FindRel(t, ec.Relations, func(r *model.DependencyRelation) bool {
+			return r.Type == model.Contain && r.Source.Kind == model.Namespace &&
+				r.Source.QualifiedName == src && r.Target.QualifiedName == tgt
+		})
+	}
+	// Namespace → File 的源必须是真实元素（无悬空中间层）。
+	nsSet := map[string]bool{}
+	for _, def := range ec.GC.Definitions() {
+		if def.Element.Kind == model.Namespace {
+			nsSet[def.Element.QualifiedName] = true
+		}
+	}
+	for _, r := range ec.Relations {
+		if r.Type == model.Contain && r.Source.Kind == model.Namespace && r.Target.Kind == model.File {
+			if !nsSet[r.Source.QualifiedName] {
+				t.Errorf("dangling Namespace→File source: %s", r.Source.QualifiedName)
+			}
+		}
+	}
+}

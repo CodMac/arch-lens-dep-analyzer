@@ -25,8 +25,9 @@ func TestCollectorCppDisplayFieldsEdge(t *testing.T) {
 		AssertDisplayFields(t, gc, "ns_outer::ns_middle::ns_inner::DeepType::d",
 			"ns_outer::ns_middle::ns_inner", "ns_outer::ns_middle::ns_inner::DeepType",
 			"ns_outer::ns_middle::ns_inner::DeepType")
-		// C++17 嵌套写法
-		AssertDisplayFields(t, gc, "ns_modern::ns_sub", "ns_modern", "", "")
+		// C++17 嵌套写法：每个前缀都是真实 namespace 元素
+		AssertDisplayFields(t, gc, "ns_modern", "", "", "")
+		AssertDisplayFields(t, gc, "ns_modern::ns_sub", "ns_modern", "ns_modern", "")
 		AssertDisplayFields(t, gc, "ns_modern::ns_sub::ModernType",
 			"ns_modern::ns_sub", "ns_modern::ns_sub", "ns_modern::ns_sub::ModernType")
 		// inline namespace

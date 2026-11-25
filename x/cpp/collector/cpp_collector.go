@@ -565,6 +565,12 @@ func (c *Collector) collectBasicDefinitions(node coreast.Node, fCtx core.FileCon
 		return
 	}
 
+	// C++17 嵌套 namespace（namespace a::b::c）：为每个前缀创建真实 namespace 元素，
+	// 否则只产最内层元素，层级边缺失且 Namespace→File 指向不存在的中间层。
+	if node.Kind() == "namespace_definition" && c.collectNestedNamespace(node, fCtx, currentQN, tmplParams) {
+		return
+	}
+
 	if node.IsNamed() {
 		items, kind := c.identifyElements(node, fCtx, tmplParams)
 		if len(items) > 0 {
@@ -928,6 +934,57 @@ func (c *Collector) identifyElements(node coreast.Node, fCtx core.FileContext, t
 		return []identified{{elem: newElem(model.ScopeBlock, "block", tmplParams)}}, model.ScopeBlock
 	}
 	return nil, ""
+}
+
+// collectNestedNamespace 处理 C++17 嵌套 namespace 语法（namespace a::b::c）。
+// 为每个前缀创建 namespace 元素（ParentQN 指向上一级），再以最内层 QN 递归子元素。
+// 返回 false 表示不是嵌套形态，交由通用流程处理。
+func (c *Collector) collectNestedNamespace(node coreast.Node, fCtx core.FileContext, currentQN, tmplParams string) bool {
+	nameNode := node.ChildByFieldName("name")
+	if nameNode == nil || nameNode.Kind() != "nested_namespace_specifier" {
+		return false
+	}
+	src := *fCtx.SourceBytes()
+	full := helper.GetNodeContent(nameNode, src)
+	parts := strings.Split(full, helper.QNSep)
+	if len(parts) < 2 {
+		return false
+	}
+	cond := c.activeCondition(fCtx.FilePath(), node)
+	parent := currentQN
+	var prefix []string
+	innermost := currentQN
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		prefix = append(prefix, p)
+		qn := c.resolver.BuildQualifiedName(currentQN, strings.Join(prefix, helper.QNSep))
+		elem := newElem(model.Namespace, p, tmplParams)
+		elem.QualifiedName = qn
+		elem.Path = fCtx.FilePath()
+		elem.Location = helper.ExtractLocation(node, fCtx.FilePath())
+		if cond != "" {
+			elem.GetMores()[constants.Condition] = cond
+		}
+		fCtx.AddDefinition(&core.DefinitionEntry{
+			Element:  elem,
+			ParentQN: parent,
+			Node:     node,
+		})
+		parent = qn
+		innermost = qn
+	}
+	childOcc := make(map[string]int)
+	for i := 0; i < node.ChildCount(); i++ {
+		ch := node.Child(i)
+		if ch.Kind() == "nested_namespace_specifier" {
+			continue
+		}
+		c.collectBasicDefinitions(ch, fCtx, innermost, tmplParams, childOcc)
+	}
+	return true
 }
 
 // identifyDeclaration 处理 declaration：函数原型 → *Decl；其余声明器 → Variable。
