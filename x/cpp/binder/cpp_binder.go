@@ -30,9 +30,6 @@ func New(resolver core.SymbolResolver) *Binder {
 // BindSymbols 遍历全局上下文中的全部定义，完成 raw 类型到 QN 的绑定。
 // GlobalContext 内部自加锁，此处通过快照遍历，不持有任何锁。
 func (b *Binder) BindSymbols(gc core.GlobalContext) error {
-	// 先构建全局 typedef/using 别名表（别名 QN -> 底层类型文本）。
-	aliases := b.collectAliases(gc)
-
 	for _, fCtx := range gc.FileContexts() {
 		for _, entry := range fCtx.Definitions() {
 			elem := entry.Element
@@ -43,7 +40,7 @@ func (b *Binder) BindSymbols(gc core.GlobalContext) error {
 
 			// 1. 返回值
 			if raw, ok := mores[constants.FunctionReturnType].(string); ok && raw != "" {
-				mores[constants.FunctionReturnTypeWithQN] = b.resolveToQN(gc, fCtx, aliases, elem.QualifiedName, raw)
+				mores[constants.FunctionReturnTypeWithQN] = b.resolveToQN(gc, fCtx, elem.QualifiedName, raw)
 			}
 
 			// 2. 参数列表 ["type name", ...]
@@ -59,7 +56,7 @@ func (b *Binder) BindSymbols(gc core.GlobalContext) error {
 					if typePart == "" {
 						continue
 					}
-					qn := b.resolveToQN(gc, fCtx, aliases, elem.QualifiedName, typePart)
+					qn := b.resolveToQN(gc, fCtx, elem.QualifiedName, typePart)
 					if namePart != "" {
 						qnParams[i] = qn + " " + namePart
 					} else {
@@ -71,12 +68,12 @@ func (b *Binder) BindSymbols(gc core.GlobalContext) error {
 
 			// 3. 变量类型
 			if raw, ok := mores[constants.VariableRawType].(string); ok && raw != "" {
-				mores[constants.VariableTypeWithQN] = b.resolveToQN(gc, fCtx, aliases, elem.QualifiedName, raw)
+				mores[constants.VariableTypeWithQN] = b.resolveToQN(gc, fCtx, elem.QualifiedName, raw)
 			}
 
 			// 4. 字段类型
 			if raw, ok := mores[constants.FieldRawType].(string); ok && raw != "" {
-				mores[constants.FieldTypeWithQN] = b.resolveToQN(gc, fCtx, aliases, elem.QualifiedName, raw)
+				mores[constants.FieldTypeWithQN] = b.resolveToQN(gc, fCtx, elem.QualifiedName, raw)
 			}
 
 			// 5. typedef/using 底层类型（concept 的 underlying 是约束表达式，不是类型，跳过）
@@ -84,35 +81,16 @@ func (b *Binder) BindSymbols(gc core.GlobalContext) error {
 				continue
 			}
 			if raw, ok := mores[constants.TypeUnderlying].(string); ok && raw != "" {
-				mores[constants.TypeUnderlying+"_with_qn"] = b.resolveToQN(gc, fCtx, aliases, elem.QualifiedName, raw)
+				mores[constants.TypeUnderlyingWithQN] = b.resolveToQN(gc, fCtx, elem.QualifiedName, raw)
 			}
 		}
 	}
 	return nil
 }
 
-// collectAliases 收集全局 typedef/using 别名表：别名 QN -> 底层类型文本。
-func (b *Binder) collectAliases(gc core.GlobalContext) map[string]string {
-	aliases := make(map[string]string)
-	for _, def := range gc.Definitions() {
-		elem := def.Element
-		if elem == nil || elem.Kind != model.Type || elem.Extra == nil {
-			continue
-		}
-		// concept 的 underlying 是约束表达式，不是可展开的类型别名。
-		if isConcept(elem.Extra.Mores) {
-			continue
-		}
-		if raw, ok := elem.Extra.Mores[constants.TypeUnderlying].(string); ok && raw != "" {
-			aliases[elem.QualifiedName] = raw
-		}
-	}
-	return aliases
-}
-
 // resolveToQN 将 raw 类型字符串解析为 QN；基本类型原样返回。
 // ownerQN 用于短名的词法作用域上溯。
-func (b *Binder) resolveToQN(gc core.GlobalContext, fCtx core.FileContext, aliases map[string]string, ownerQN, rawType string) string {
+func (b *Binder) resolveToQN(gc core.GlobalContext, fCtx core.FileContext, ownerQN, rawType string) string {
 	rawType = helper.NormalizeTypeText(rawType)
 	if rawType == "" {
 		return ""
@@ -131,9 +109,18 @@ func (b *Binder) resolveToQN(gc core.GlobalContext, fCtx core.FileContext, alias
 	}
 
 	// typedef/using 别名链展开（最多 8 层，防环）。
-	base = b.expandAlias(gc, fCtx, aliases, base, 8)
+	origBase := base
+	base = b.expandAlias(gc, fCtx, ownerQN, base, 8)
 	if base == "" {
 		return rawType
+	}
+	// 模板别名底层退化为模板变量（template<class T> using Vec = T*;）：
+	// 展开结果 "T" 无意义，保留别名自身 QN。
+	if helper.IsTypeVariable(base) {
+		if elem := b.findAliasElem(gc, fCtx, ownerQN, origBase); elem != nil {
+			return elem.QualifiedName
+		}
+		return base
 	}
 	if b.resolver.IsPrimitive(base) {
 		return base
@@ -162,47 +149,77 @@ func (b *Binder) resolveToQN(gc core.GlobalContext, fCtx core.FileContext, alias
 }
 
 // expandAlias 展开 typedef/using 别名链。
-func (b *Binder) expandAlias(gc core.GlobalContext, fCtx core.FileContext, aliases map[string]string, name string, depth int) string {
+// 查找顺序：限定名 → owner 词法作用域上溯 → 文件内短名 → 全局唯一短名。
+// 全局存在多个同名别名时视为歧义、不展开（交给 ResolveType 按文件作用域解析）。
+func (b *Binder) expandAlias(gc core.GlobalContext, fCtx core.FileContext, ownerQN, name string, depth int) string {
 	if depth <= 0 {
 		return name
 	}
-	// 别名可能以短名或限定名登记；先按限定名、再按文件内短名、再按全局短名查找。
-	var aliasQN string
-	if _, ok := aliases[name]; ok {
-		aliasQN = name
-	} else if entry, ok := fCtx.FindByQualifiedName(name); ok && entry.Element.Kind == model.Type {
-		aliasQN = entry.Element.QualifiedName
-	} else if entries, ok := fCtx.FindByShortName(name); ok {
-		for _, e := range entries {
-			if e.Element.Kind == model.Type {
-				aliasQN = e.Element.QualifiedName
-				break
-			}
-		}
+	elem := b.findAliasElem(gc, fCtx, ownerQN, name)
+	if elem == nil || elem.Extra == nil {
+		return name
 	}
-	if aliasQN == "" {
-		// 全局短名扫描（跨文件 typedef）。
-		for _, def := range gc.Definitions() {
-			if def.Element.Kind == model.Type && def.Element.Name == name {
-				aliasQN = def.Element.QualifiedName
-				break
-			}
-		}
+	// concept 的 underlying 是约束表达式，不是可展开的类型别名。
+	if isConcept(elem.Extra.Mores) {
+		return name
 	}
-	underlying, ok := aliases[aliasQN]
+	underlying, ok := elem.Extra.Mores[constants.TypeUnderlying].(string)
 	if !ok || underlying == "" {
 		return name
 	}
 	// 匿名 struct/union/class 承载实体（typedef struct {...} Point;）：
 	// 别名本身即目标类型，底层文本不是可解析的类型名，不展开。
 	if isAnonymousTypeText(underlying) {
-		return aliasQN
+		return elem.QualifiedName
 	}
 	next := helper.BaseTypeName(underlying)
 	if next == "" || next == name {
 		return name
 	}
-	return b.expandAlias(gc, fCtx, aliases, next, depth-1)
+	return b.expandAlias(gc, fCtx, elem.QualifiedName, next, depth-1)
+}
+
+// findAliasElem 按作用域优先级查找 typedef/using 元素：
+// 限定名精确 → owner 词法作用域上溯 → 文件内短名 → 全局唯一短名。
+// 全局同名候选多于一个时返回 nil（歧义）。
+func (b *Binder) findAliasElem(gc core.GlobalContext, fCtx core.FileContext, ownerQN, name string) *model.CodeElement {
+	if strings.Contains(name, helper.QNSep) {
+		if entry, ok := gc.FindByQualifiedName(name); ok && entry.Element.Kind == model.Type {
+			return entry.Element
+		}
+		return nil
+	}
+	// owner 词法作用域上溯：Outer::Inner::v 的 alias_t 先查 Outer::Inner::alias_t。
+	for scope := helper.PkgOf(ownerQN); scope != ""; {
+		if entry, ok := gc.FindByQualifiedName(helper.BuildQN(scope, name)); ok && entry.Element.Kind == model.Type {
+			return entry.Element
+		}
+		next := helper.PkgOf(scope)
+		if next == scope {
+			break
+		}
+		scope = next
+	}
+	// 文件内短名优先（跨文件同名别名各按本文件解析）。
+	if entries, ok := fCtx.FindByShortName(name); ok {
+		for _, e := range entries {
+			if e.Element.Kind == model.Type {
+				return e.Element
+			}
+		}
+	}
+	// 全局短名：仅唯一候选时使用，避免跨文件同名别名互相污染。
+	var found *model.CodeElement
+	for _, def := range gc.Definitions() {
+		if def.Element.Kind != model.Type || def.Element.Name != name {
+			continue
+		}
+		if found != nil && found.QualifiedName != def.Element.QualifiedName {
+			return nil
+		}
+		found = def.Element
+	}
+	return found
 }
 
 // splitParam 将 "int x" / "const char* s" / "std::vector<int> v" 拆为类型与名称。

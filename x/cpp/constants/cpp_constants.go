@@ -72,6 +72,8 @@ const (
 
 	// TypeUnderlying typedef/using 别名指向的底层类型文本 -> string
 	TypeUnderlying = "cpp.type.underlying"
+	// TypeUnderlyingWithQN typedef/using 底层类型绑定后的 QN -> string
+	TypeUnderlyingWithQN = "cpp.type.underlying_with_qn"
 	// TypeIsConcept 是否为 C++20 concept（underlying 是约束表达式而非类型，不参与别名展开）-> bool
 	TypeIsConcept = "cpp.type.is_concept"
 

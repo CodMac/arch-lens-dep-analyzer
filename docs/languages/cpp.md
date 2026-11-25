@@ -3,7 +3,7 @@
 > 适用范围：`x/cpp/` · 与 [qn-format.md](../qn-format.md)（QN 契约）、[language-extension.md](../language-extension.md)（SPI 契约）互为补充
 >
 > 本文档回答「C/C++ 支持到什么程度」：元素/关系覆盖清单、声明-实现配对模型、条件编译策略、实现边界与已知限制。
-> 行为契约由 `x/cpp/testdata/e2e/baseline.golden.jsonl`（4353 行 = 1522 元素 + 2831 关系，LevelBalanced）锚定。
+> 行为契约由 `x/cpp/testdata/e2e/baseline.golden.jsonl`（4404 行 = 1545 元素 + 2859 关系，LevelBalanced）锚定。
 
 ## 1. 总体状态
 
@@ -28,7 +28,7 @@ C 与 C++ **共用同一套实现**（`x/cpp/`），仅 Parser 层按扩展名�
 |---|---|---|---|
 | Parser | `x/cpp/cpp_parser.go` + `x/cpp/preproc` | 条件编译双树（投影树 + 原始树）、宏归一化（等长置空）、分支回补、死区标注 | §5 |
 | Collector | `x/cpp/collector` | Step 0–6：文件元素 → include/模块导入 → 递归定义（QN 分配 / 匿名承载 / 条件标注 / 控制流声明作用域 / friend）→ 原始树补元素 → 分支回补 → 元数据增强（含 concept / linkage / inline namespace）→ namespace 汇总 → 展示字段 → 动作树根 | §2、§5.2–5.3 |
-| Binder | `x/cpp/binder` | raw 类型文本 → QN，typedef/using 别名链递归展开 | §6.3 |
+| Binder | `x/cpp/binder` | raw 类型文本 → QN；typedef/using 别名链按 owner 作用域/文件优先递归展开；多词基本类型归一化 | §6.3 |
 | Extractor | `x/cpp/extractor` | 结构关系 + 动作关系 + Capture 派生；多树按字节区间去重 | §3、§5.5 |
 | Linker | `x/cpp/linker` | Contain 拓扑 + ImplLink 签名配对 | §4 |
 | SymbolResolver | `x/cpp/symbol_resolver` | 两段式：归一化为 `expr` → 作用域链/继承链查找 + 链式类型传播 | §6.2 |
@@ -388,9 +388,13 @@ type expr struct {
 ### 6.3 typedef / using 别名链
 
 - Collector 记录 `cpp.type.underlying`（底层类型文本）。
-- Binder 构建全局别名表并在类型绑定时**递归展开**（最多 8 层防环），再解析为 QN。
-- **concept 不参与别名展开**：C++20 concept 的 `cpp.type.underlying` 是约束表达式（如 `sizeof(T) <= 4`）而非类型，元素带 `cpp.type.is_concept=true`；Binder 的别名表与底层类型绑定均跳过 concept，避免同名类型引用被约束表达式污染。
+- Binder 在类型绑定时**递归展开**别名链（最多 8 层防环），再解析为 QN。
+- **别名查找按作用域优先级**（`findAliasElem`）：限定名精确 → owner 词法作用域上溯（`Outer::Inner::v` 先查 `Outer::Inner::alias_t`）→ 文件内短名 → 全局短名（**仅唯一候选**）。全局存在多个同名别名时视为歧义、不展开，交给 `ResolveType` 按文件作用域解析。这保证嵌套类遮蔽与跨文件同名 typedef（`value_type`/`size_type`）各按自身作用域展开。
+- **模板别名退化保护**：`template<class T> using Vec = T*;` 的底层展开为模板变量 `T`（无意义），此时保留别名自身 QN（`Vec`）而非 `T`。
+- **concept 不参与别名展开**：C++20 concept 的 `cpp.type.underlying` 是约束表达式（如 `sizeof(T) <= 4`）而非类型，元素带 `cpp.type.is_concept=true`；Binder 的别名查找与底层类型绑定均跳过 concept，避免同名类型引用被约束表达式污染。
 - **匿名承载 typedef 不展开**：`typedef struct {...} Point;` 的底层文本是匿名结构体（`struct { int x; int y; }`），不是可解析的类型名；此时别名本身即目标类型，Binder 直接绑定到 `Point`。否则变量的 `cpp.variable.type_with_qn` 会退化为匿名结构体文本，`p.x` 的接收者类型解析失败后退回全局短名扫描，命中同名参数/变量（结果随并行收集顺序变化而不确定）。
+- **多词基本类型**：`unsigned long long` / `long double` / `unsigned int` / `signed char` / `long long` 等由 `IsPrimitive` 按「全部 token ∈ 算术关键字集合」识别为 `PRIMITIVE`，不再落为外部类型；`const`/`volatile` 在 `BaseTypeName` 中剥离。
+- 底层类型绑定写入 `cpp.type.underlying_with_qn`（`constants.TypeUnderlyingWithQN`）。
 
 ### 6.4 外部符号兜底
 
@@ -476,18 +480,20 @@ type expr struct {
 
 ### 7.3 Binder 阶段的已知边界（2026-11-25 审计）
 
-Binder 负责 raw 类型文本 → QN。以下缺陷均经探针实测，按优先级记录（修复计划见对应任务）：
+Binder 负责 raw 类型文本 → QN。以下缺陷均经探针实测，按优先级记录：
 
-| # | 优先级 | 边界 | 实测现象 | 修复方向 |
+| # | 优先级 | 边界 | 实测现象 | 状态 |
 |---|---|---|---|---|
-| B-1 | P1 | **别名展开不感知 owner 作用域** | `Outer{using alias_t=int; Inner{using alias_t=float; alias_t v;}}` → `Outer::Inner::v` 的 `type_with_qn=int`（应为 float） | `expandAlias` 接收 `ownerQN`，先按 `BuildQN(scope,name)` 沿 `PkgOf` 上溯，再文件短名 |
-| B-2 | P1 | **跨文件同名别名全局扁平** | `a.cpp: typedef int value_type;` + `b.cpp: typedef float value_type;` → `A::v` 与 `B::v` 的 `type_with_qn` 都是 int | 别名查找文件优先；全局短名仅在唯一候选时使用 |
-| B-3 | P1 | **多词基本类型未识别** | `unsigned long long` / `long double` / `unsigned int` / `signed char` / `long long` 落为外部 CLASS 符号（LevelRaw 下 PARAMETER/TYPE_ARG 目标错误） | `IsPrimitive` 增加「全部 token ∈ 算术关键字集合」判定；`BaseTypeName` 剥 `volatile` |
-| B-4 | P2 | **模板别名展开退化** | `template<class T> using Vec = T*;` 的 `Vec<int> v` → `type_with_qn="T"`（无意义模板变量） | 展开结果为模板变量时保留别名自身 QN |
+| B-1 | P1 | **别名展开不感知 owner 作用域** | `Outer{using alias_t=int; Inner{using alias_t=float; alias_t v;}}` → `Outer::Inner::v` 的 `type_with_qn=int`（应为 float） | **已修复**：`findAliasElem` 按 owner 词法作用域上溯 |
+| B-2 | P1 | **跨文件同名别名全局扁平** | `a.cpp: typedef int value_type;` + `b.cpp: typedef float value_type;` → `A::v` 与 `B::v` 的 `type_with_qn` 都是 int | **已修复**：文件短名优先；全局短名仅唯一候选时使用 |
+| B-3 | P1 | **多词基本类型未识别** | `unsigned long long` / `long double` / `unsigned int` / `signed char` / `long long` 落为外部 CLASS 符号（LevelRaw 下 PARAMETER/TYPE_ARG 目标错误） | **已修复**：`IsPrimitive` 支持多词组合；`BaseTypeName` 剥 `volatile` |
+| B-4 | P2 | **模板别名展开退化** | `template<class T> using Vec = T*;` 的 `Vec<int> v` → `type_with_qn="T"`（无意义模板变量） | **已修复**：展开结果为模板变量时保留别名自身 QN |
 | B-5 | P2 | **函数指针 typedef 丢形态** | `typedef void (*cb_t)(int);` 的 underlying 只记 `void`，`cb_t` 展开为 `void` | 已知限制，记录不修 |
-| B-6 | P2 | **元数据键魔法字符串** | `constants.TypeUnderlying+"_with_qn"` 为裸拼接且无消费方 | 定义 `TypeUnderlyingWithQN` 常量并明确用途或删除 |
-| B-7 | 边界 | **无 include 可见性** | 别名表全局生效，不检查 `#include` | 与 §2.3.2 per-TU 可见性同源，索引层设计边界 |
+| B-6 | P2 | **元数据键魔法字符串** | `constants.TypeUnderlying+"_with_qn"` 为裸拼接且无消费方 | **已修复**：新增 `constants.TypeUnderlyingWithQN` |
+| B-7 | 边界 | **无 include 可见性** | 别名查找全局生效，不检查 `#include` | 与 §2.3.2 per-TU 可见性同源，索引层设计边界 |
 | B-8 | 边界 | **`isTypeKind` 接受 Namespace** | 类型名与 namespace 同名时绑定到 namespace | 极罕见，记录不修 |
+
+> 残留：`TypeArg` 关系由 Extractor 直接调用 `ResolveType` 产出，不带 owner 上下文，嵌套类同名别名的关系目标仍可能命中外层（`type_with_qn` 已正确）。属 Resolver 侧问题，记录待后续处理。
 
 > `concept` 的约束表达式曾进入别名表污染同名类型引用，已修复：元素带 `cpp.type.is_concept=true`，Binder 的别名表与底层类型绑定均跳过（见 §6.3）。
 
@@ -497,7 +503,7 @@ Binder 负责 raw 类型文本 → QN。以下缺陷均经探针实测，按优�
 |---|---|---|
 | Parser / ParserFactory | `x/cpp/cpp_parser.go` | 按扩展名选 grammar（`languageForPath`） |
 | Collector | `x/cpp/collector/` | Step 0–6 收集 + 条件栈 + 匿名 struct 承载 + 元数据增强 + 展示字段填充 |
-| Binder | `x/cpp/binder/` | raw 类型 → QN，typedef 别名链展开 |
+| Binder | `x/cpp/binder/` | raw 类型 → QN，typedef 别名链按作用域展开，多词基本类型识别 |
 | Extractor | `x/cpp/extractor/` | 结构 + 动作 + Capture 派生 |
 | Linker | `x/cpp/linker/` | Contain 拓扑 + ImplLink 签名配对 |
 | NoiseFilter | `x/cpp/noise_filter/` | 复用 `core.DefaultNoiseFilter` 三态；ImplLink 恒保留 |
@@ -510,9 +516,9 @@ Binder 负责 raw 类型文本 → QN。以下缺陷均经探针实测，按优�
 
 - 三层测试 + e2e 黄金回归集，全部位于 `x/cpp/test/`。
 - 测试文件按语言归属拆分：`*_base_test.go`（C/C++ 共享）、`*_c_test.go`（C 独有）、`*_cpp_test.go`（C++ 独有）；共享断言集中在 `assert_helper.go`。
-- e2e 基线：`x/cpp/testdata/e2e/baseline.golden.jsonl`（1522 元素 + 2831 关系，LevelBalanced）。
-- 元素覆盖（基线实测）：FILE 91 / NAMESPACE 49 / CLASS 28 / STRUCT 118 / ENUM 22 / ENUM_CONSTANT 49 / TYPE 33 / MACRO 48 / FIELD 176 / FUNCTION 149 / FUNCTION_DECL 49 / METHOD 83 / METHOD_DECL 91 / VARIABLE 470 / SCOPE_BLOCK 38 / LAMBDA 28。
-- 关系覆盖（基线实测）：CONTAIN 1812 / USE 364 / ASSIGN 185 / TYPE_ARG 104 / CALL 87 / IMPL_LINK 70 / PARAMETER 58 / IMPORT 39 / RETURN 35 / EXTEND 24 / CAPTURE 24 / CAST 14 / CREATE 7 / THROW 6 / FRIEND 2。
+- e2e 基线：`x/cpp/testdata/e2e/baseline.golden.jsonl`（1545 元素 + 2859 关系，LevelBalanced）。
+- 元素覆盖（基线实测）：FILE 95 / NAMESPACE 49 / CLASS 28 / STRUCT 121 / ENUM 22 / ENUM_CONSTANT 49 / TYPE 36 / MACRO 48 / FIELD 186 / FUNCTION 150 / FUNCTION_DECL 49 / METHOD 83 / METHOD_DECL 91 / VARIABLE 472 / SCOPE_BLOCK 38 / LAMBDA 28。
+- 关系覆盖（基线实测）：CONTAIN 1836 / USE 364 / ASSIGN 185 / TYPE_ARG 108 / CALL 87 / IMPL_LINK 70 / PARAMETER 58 / IMPORT 39 / RETURN 35 / EXTEND 24 / CAPTURE 24 / CAST 14 / CREATE 7 / THROW 6 / FRIEND 2。
 - 基线（LevelBalanced）中 PARAMETER/RETURN 大幅减少，是因为当前样例的参数/返回类型多为基本类型（`int`/`void`），被外部符号降噪过滤；CONTAIN/USE/ASSIGN 等指向源码符号的关系不受影响。
 - 测试用例：
   | 测试 | 覆盖 |
@@ -587,6 +593,8 @@ Binder 负责 raw 类型文本 → QN。以下缺陷均经探针实测，按优�
   | `TestResolverCppCast` | C 风格 + static/dynamic/const/reinterpret_cast、`(void)` 抑制 |
   | `TestResolverCppThrow` | throw new T / throw T(...) / throw var |
   | `TestBinderCppConceptNotAlias` | concept 不进别名表、不产 `underlying_with_qn`；同名类型引用不被约束表达式污染 |
+  | `TestBinderCppAliasScope` | 嵌套类同名别名遮蔽、跨文件同名 typedef 各按本文件展开、模板别名退化保留自身 QN |
+  | `TestBinderCppMultiWordPrimitive` | 多词基本类型（`unsigned long long` 等）识别为 PRIMITIVE，`volatile` 剥离 |
 
 - 包级单元测试（不依赖完整流水线）：
   - `core/global_context_test.go`：`TestGlobalContextCrossFileSameQN`（跨文件同 QN+Kind 共存）、`TestGlobalContextSameFileSameQN`（同文件同键幂等）、`TestGlobalContextDeclDefSameFile`（声明/定义同键时定义覆盖）。

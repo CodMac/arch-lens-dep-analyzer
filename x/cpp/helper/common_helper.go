@@ -48,6 +48,14 @@ func ExtractLocation(node coreast.Node, path string) *model.Location {
 	}
 }
 
+// primitiveTokens 是算术类型关键字的全集，用于识别多词基本类型
+// （unsigned long long / long double / signed char / short int …）。
+var primitiveTokens = map[string]bool{
+	"void": true, "int": true, "long": true, "short": true, "char": true,
+	"unsigned": true, "signed": true, "float": true, "double": true,
+	"bool": true, "wchar_t": true, "char8_t": true, "char16_t": true, "char32_t": true,
+}
+
 // IsPrimitive 判断类型名是否为 C/C++ 基本类型。
 func IsPrimitive(t string) bool {
 	switch t {
@@ -58,7 +66,17 @@ func IsPrimitive(t string) bool {
 		"auto":
 		return true
 	}
-	return false
+	// 多词基本类型：全部 token 都是算术关键字（如 unsigned long long）。
+	fields := strings.Fields(t)
+	if len(fields) < 2 {
+		return false
+	}
+	for _, f := range fields {
+		if !primitiveTokens[f] {
+			return false
+		}
+	}
+	return true
 }
 
 // StripArraySuffix 去掉类型文本的数组后缀：Foo[N] -> Foo。
@@ -183,8 +201,10 @@ func BaseTypeName(s string) string {
 	s = strings.ReplaceAll(s, "*", "")
 	s = strings.ReplaceAll(s, "&", "")
 	s = strings.TrimSpace(s)
-	s = strings.TrimPrefix(s, "const ")
-	s = strings.TrimSuffix(s, " const")
+	for _, q := range []string{"const", "volatile"} {
+		s = strings.TrimPrefix(s, q+" ")
+		s = strings.TrimSuffix(s, " "+q)
+	}
 	s = strings.TrimSpace(s)
 	s = StripTemplateArgs(s)
 	return strings.TrimSpace(s)
