@@ -141,7 +141,7 @@ func TestExtractorImplLink(t *testing.T) {
 	if link.Target.Path != "collector/base/basic.h" {
 		t.Errorf("ImplLink target path = %s, want collector/base/basic.h", link.Target.Path)
 	}
-	if sig, _ := link.Mores[constants.RelImplLinkSignature].(string); sig != "add(int,int)(int,int)" {
+	if sig, _ := link.Mores[constants.RelImplLinkSignature].(string); sig != "add(int,int)" {
 		t.Errorf("ImplLink signature = %q", sig)
 	}
 

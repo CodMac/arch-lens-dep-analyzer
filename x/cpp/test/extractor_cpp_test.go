@@ -1,6 +1,7 @@
 package test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/CodMac/arch-lens-dep-analyzer/core"
@@ -351,7 +352,7 @@ func TestExtractorCppImplLink(t *testing.T) {
 	paired := FindRel(t, ec.Relations, func(r *model.DependencyRelation) bool {
 		return r.Type == model.ImplLink && r.Source.QualifiedName == "impl::paired(int)"
 	})
-	if sig, _ := paired.Mores[constants.RelImplLinkSignature].(string); sig != "impl::paired(int)(int)" {
+	if sig, _ := paired.Mores[constants.RelImplLinkSignature].(string); sig != "impl::paired(int)" {
 		t.Errorf("paired signature = %q", sig)
 	}
 
@@ -594,4 +595,37 @@ func TestExtractorCppCallTemplateArg(t *testing.T) {
 		return r.Type == model.TypeArg && r.Source.QualifiedName == "ct_fn()" &&
 			r.Target.QualifiedName == "CtFoo"
 	})
+}
+
+// TestExtractorCppImplLinkSignature ImplLink 签名规范化：
+// typedef 别名 / struct tag / 数组↔指针 配对，const/引用/指针重载各自区分。
+func TestExtractorCppImplLinkSignature(t *testing.T) {
+	paths := ResolveTree(t, "linker/cpp/impl_signature")
+	ec := RunPipeline(t, "x/cpp/testdata", paths, core.LevelRaw)
+
+	pairs := [][2]string{
+		{"sig_alias(int)", "sig_alias(SigInt)"},
+		{"sig_tag(SigPoint)", "sig_tag(struct SigPoint)"},
+		{"sig_arr(int*)", "sig_arr(int[])"},
+		{"sig_ov(SigPoint)", "sig_ov(SigPoint)"},
+		{"sig_ov(const SigPoint&)", "sig_ov(const SigPoint&)"},
+		{"sig_ov(SigPoint*)", "sig_ov(SigPoint*)"},
+	}
+	for _, p := range pairs {
+		src, tgt := p[0], p[1]
+		FindRel(t, ec.Relations, func(r *model.DependencyRelation) bool {
+			return r.Type == model.ImplLink && r.Source.QualifiedName == src &&
+				r.Target.QualifiedName == tgt
+		})
+	}
+	// 三种重载各自独立配对，不互相误并。
+	n := 0
+	for _, r := range ec.Relations {
+		if r.Type == model.ImplLink && strings.HasPrefix(r.Source.QualifiedName, "sig_ov(") {
+			n++
+		}
+	}
+	if n != 3 {
+		t.Errorf("sig_ov ImplLink count = %d, want 3", n)
+	}
 }

@@ -149,17 +149,86 @@ func (l *Linker) linkImpl(gc core.GlobalContext, relMap map[string]*model.Depend
 	}
 }
 
-// implSignature 构造 ImplLink 配对签名：完整 QN + 参数类型列表。
+// implSignature 构造 ImplLink 配对签名：函数名 QN（去尾部参数列表）+ 规范化参数类型列表。
+// 参数类型以 Binder 的 parameters_with_qn 为基准（已展开 typedef/using、剥离 struct tag、
+// 数组/指针退化），再从原始文本补回 const/指针/引用限定，避免 `f(S)` 与 `f(const S&)`
+// 因 WithQN 丢限定符而误并。
 func implSignature(elem *model.CodeElement) string {
 	if elem.Extra == nil {
 		return ""
 	}
-	params, _ := elem.Extra.Mores[constants.FunctionParameters].([]string)
-	types := make([]string, 0, len(params))
-	for _, p := range params {
-		types = append(types, paramTypeOnly(p))
+	raw, _ := elem.Extra.Mores[constants.FunctionParameters].([]string)
+	withQN, _ := elem.Extra.Mores[constants.FunctionParametersWithQN].([]string)
+	types := make([]string, 0, len(raw))
+	for i, p := range raw {
+		q := ""
+		if i < len(withQN) {
+			q = withQN[i]
+		}
+		types = append(types, canonicalParamType(p, q))
 	}
-	return elem.QualifiedName + "(" + strings.Join(types, ",") + ")"
+	return stripParamList(elem.QualifiedName) + "(" + strings.Join(types, ",") + ")"
+}
+
+// canonicalParamType 生成参数类型的规范化文本：
+// 基类型取 WithQN（别名展开 / tag 剥离 / 指针引用数组剥离后的 QN），
+// 限定符（const/volatile/指针/引用/数组）从原始文本补回，数组按指针退化。
+func canonicalParamType(raw, withQN string) string {
+	rawType := paramTypeOnly(raw)
+	base := ""
+	if withQN != "" {
+		base = paramTypeOnly(withQN)
+	}
+	if base == "" || strings.ContainsAny(base, "*&[]()") {
+		base = helper.BaseTypeName(rawType)
+	}
+	if base == "" {
+		return rawType
+	}
+	ptrs := strings.Count(rawType, "*") + strings.Count(rawType, "[")
+	refs := strings.Count(rawType, "&")
+	var b strings.Builder
+	if hasWord(rawType, "const") {
+		b.WriteString("const ")
+	}
+	b.WriteString(base)
+	b.WriteString(strings.Repeat("*", ptrs))
+	b.WriteString(strings.Repeat("&", refs))
+	if hasWord(rawType, "volatile") {
+		b.WriteString(" volatile")
+	}
+	return b.String()
+}
+
+// hasWord 判断类型文本中是否含指定关键字 token。
+func hasWord(s, word string) bool {
+	for _, f := range strings.Fields(s) {
+		if f == word {
+			return true
+		}
+	}
+	return false
+}
+
+// stripParamList 去掉 QN 尾部的参数列表：`ns::C::f(int)` → `ns::C::f`，
+// `C::operator()()` → `C::operator()`。非函数 QN 原样返回。
+func stripParamList(qn string) string {
+	if !strings.HasSuffix(qn, ")") {
+		return qn
+	}
+	depth := 0
+	for i := len(qn) - 1; i >= 0; i-- {
+		switch qn[i] {
+		case ')':
+			depth++
+		case '(':
+			depth--
+			if depth == 0 {
+				return qn[:i]
+			}
+		}
+	}
+	return qn
 }
 
 // paramTypeOnly 从 "int x" 提取 "int"。
