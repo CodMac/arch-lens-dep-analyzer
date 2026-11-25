@@ -331,6 +331,17 @@ func (e *Extractor) extractTypeArgRels(fCtx core.FileContext, gc core.GlobalCont
 	case model.Field:
 		raw, _ = mores[constants.FieldRawType].(string)
 		qn, _ = mores[constants.FieldTypeWithQN].(string)
+	case model.Type:
+		// typedef/using 底层类型也是类型依赖；concept 的 underlying 是约束
+		// 表达式，匿名 struct 承载的底层不是可解析类型名，均跳过。
+		if v, _ := mores[constants.TypeIsConcept].(bool); v {
+			return nil
+		}
+		raw, _ = mores[constants.TypeUnderlying].(string)
+		qn, _ = mores[constants.TypeUnderlyingWithQN].(string)
+		if isAnonymousTypeText(raw) {
+			return nil
+		}
 	default:
 		return nil
 	}
@@ -343,6 +354,10 @@ func (e *Extractor) extractTypeArgRels(fCtx core.FileContext, gc core.GlobalCont
 		target = e.resolver.ResolveType(gc, fCtx, raw, model.Class)
 	}
 	if target == nil || target.Kind == model.Primitive || target.Kind == model.Namespace {
+		return nil
+	}
+	// 自引用（typedef struct X X;）不产关系。
+	if target.QualifiedName == elem.QualifiedName {
 		return nil
 	}
 	rels = append(rels, &model.DependencyRelation{
@@ -949,6 +964,20 @@ func paramTypeOnly(p string) string {
 		}
 	}
 	return p
+}
+
+// isAnonymousTypeText 判断类型文本是否为匿名 struct/union/class/enum 定义
+// （typedef struct { ... } Point; 的底层文本）。
+func isAnonymousTypeText(s string) bool {
+	s = strings.TrimSpace(s)
+	for _, kw := range []string{"struct", "union", "class", "enum"} {
+		if !strings.HasPrefix(s, kw) {
+			continue
+		}
+		rest := strings.TrimSpace(strings.TrimPrefix(s, kw))
+		return strings.HasPrefix(rest, "{") || strings.HasPrefix(rest, ":")
+	}
+	return false
 }
 
 // templateArgs 提取类型文本中的模板实参列表（顶层逗号切分）。

@@ -506,3 +506,26 @@ func TestExtractorCppCaseEnumUse(t *testing.T) {
 		})
 	}
 }
+
+// TestExtractorCppTypedefDependency typedef/using 的底层类型产 TypeArg。
+func TestExtractorCppTypedefDependency(t *testing.T) {
+	paths := ResolvePaths(t, "extractor/cpp/typedef_dep", "*.cpp")
+	_, rels := RunExtraction(t, "x/cpp/testdata", paths)
+
+	for _, tc := range []struct{ src, tgt string }{
+		{"TdAlias", "TdBase"},
+		{"TdBoxFoo", "TdBox"},
+		{"TdBoxFoo", "TdFoo"},
+	} {
+		src, tgt := tc.src, tc.tgt
+		FindRel(t, rels, func(r *model.DependencyRelation) bool {
+			return r.Type == model.TypeArg && r.Source.QualifiedName == src && r.Target.QualifiedName == tgt
+		})
+	}
+	// 匿名 struct 承载的 typedef 不产关系。
+	if HasRel(rels, func(r *model.DependencyRelation) bool {
+		return r.Type == model.TypeArg && r.Source.QualifiedName == "TdAnon"
+	}) {
+		t.Errorf("anonymous typedef should not produce TypeArg")
+	}
+}
