@@ -5,6 +5,7 @@ package extractor
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/CodMac/arch-lens-dep-analyzer/core"
@@ -88,9 +89,14 @@ func (e *Extractor) extractHierarchy(fCtx core.FileContext, gc core.GlobalContex
 	fileDef, ok := gc.FindByQualifiedName(fCtx.FilePath())
 	if ok {
 		fileSource := fileDef.Element
+		// 项目内 include 的路径索引按需构建一次（避免每个 include 扫描全部定义）。
+		var fileIdx *fileIncludeIndex
 		for _, imports := range fCtx.Imports() {
 			for _, imp := range imports {
-				target := e.resolveInclude(gc, fCtx, imp)
+				if fileIdx == nil && !imp.BoolAttr(constants.ImportAttrIsSystem) {
+					fileIdx = newFileIncludeIndex(gc)
+				}
+				target := e.resolveInclude(gc, fCtx, imp, fileIdx)
 				if target == nil {
 					continue
 				}
@@ -138,27 +144,54 @@ func (e *Extractor) extractHierarchy(fCtx core.FileContext, gc core.GlobalContex
 }
 
 // resolveInclude 解析 #include 目标：项目内头文件 → File 元素；系统头 → 外部符号。
-func (e *Extractor) resolveInclude(gc core.GlobalContext, fCtx core.FileContext, imp *core.ImportInfo) *model.CodeElement {
+func (e *Extractor) resolveInclude(gc core.GlobalContext, fCtx core.FileContext, imp *core.ImportInfo, fileIdx *fileIncludeIndex) *model.CodeElement {
 	if !imp.BoolAttr(constants.ImportAttrIsSystem) {
 		// 项目内头文件：按路径后缀匹配已收集的 File 元素（相对项目根）。
-		if target := e.findFileByInclude(gc, imp.RawImportPath); target != nil {
+		if target := fileIdx.lookup(imp.RawImportPath); target != nil {
 			return target
 		}
 	}
 	return helper.NewExternalElement(model.File, imp.Alias, imp.RawImportPath)
 }
 
-// findFileByInclude 按 include 路径后缀匹配 File 元素。
-func (e *Extractor) findFileByInclude(gc core.GlobalContext, raw string) *model.CodeElement {
-	raw = strings.ReplaceAll(raw, "\\", "/")
-	suffix := "/" + raw
+// fileIncludeIndex 按 basename 分桶的 File 元素索引，用于 include 路径后缀匹配。
+// 同一 basename 的候选保持 Definitions 原始顺序，命中语义与线性扫描一致。
+type fileIncludeIndex struct {
+	byBase map[string][]*model.CodeElement
+}
+
+// newFileIncludeIndex 从全局定义构建 File 元素索引。
+func newFileIncludeIndex(gc core.GlobalContext) *fileIncludeIndex {
+	idx := &fileIncludeIndex{byBase: make(map[string][]*model.CodeElement)}
 	for _, def := range gc.Definitions() {
 		if def.Element.Kind != model.File {
 			continue
 		}
-		qn := def.Element.QualifiedName
+		qn := strings.ReplaceAll(def.Element.QualifiedName, "\\", "/")
+		base := qn
+		if i := strings.LastIndex(base, "/"); i >= 0 {
+			base = base[i+1:]
+		}
+		idx.byBase[base] = append(idx.byBase[base], def.Element)
+	}
+	return idx
+}
+
+// lookup 按 include 路径后缀匹配 File 元素。
+func (idx *fileIncludeIndex) lookup(raw string) *model.CodeElement {
+	if idx == nil {
+		return nil
+	}
+	raw = strings.ReplaceAll(raw, "\\", "/")
+	base := raw
+	if i := strings.LastIndex(base, "/"); i >= 0 {
+		base = base[i+1:]
+	}
+	suffix := "/" + raw
+	for _, elem := range idx.byBase[base] {
+		qn := strings.ReplaceAll(elem.QualifiedName, "\\", "/")
 		if qn == raw || strings.HasSuffix(qn, suffix) {
-			return def.Element
+			return elem
 		}
 	}
 	return nil
@@ -413,6 +446,15 @@ type actionCtx struct {
 	seen map[actionKey]bool
 	// deadRegions #if 0 死区（按 Start 升序），死区内的动作不产关系。
 	deadRegions []preproc.Region
+	// sources / scopes 是按文件预构建的区间索引，避免每个动作节点重复扫描全部定义。
+	sources []spanEntry
+	scopes  []spanEntry
+}
+
+// spanEntry 是定义元素的字节区间索引项。
+type spanEntry struct {
+	start, end int
+	elem       *model.CodeElement
 }
 
 // actionKey 动作节点去重键。
@@ -433,6 +475,7 @@ func (e *Extractor) extractActions(fCtx core.FileContext, gc core.GlobalContext)
 		gc:       gc,
 		seen:     make(map[actionKey]bool),
 	}
+	ac.sources, ac.scopes = buildSpanIndexes(fCtx)
 
 	roots := []coreast.Node{fCtx.Root()}
 	if ar, ok := fCtx.(interface{ ActionRoots() cppctx.ActionRoots }); ok {
@@ -997,22 +1040,7 @@ func (ac *actionCtx) handleNamespaceAlias(node coreast.Node) {
 // scopeElementOf 定位声明语句的所属作用域（函数/方法/Lambda/块/字段/类/命名空间），
 // 文件作用域回退到 File 元素。
 func (ac *actionCtx) scopeElementOf(node coreast.Node) *model.CodeElement {
-	start, end := node.StartByte(), node.EndByte()
-	var best *model.CodeElement
-	bestSpan := -1
-	for _, entry := range ac.fCtx.Definitions() {
-		elem := entry.Element
-		if !isScopeKind(elem) || entry.Node == nil {
-			continue
-		}
-		s, e := entry.Node.StartByte(), entry.Node.EndByte()
-		if s <= start && end <= e {
-			if span := e - s; bestSpan < 0 || span < bestSpan {
-				bestSpan, best = span, elem
-			}
-		}
-	}
-	if best != nil {
+	if best := innermostSpan(ac.scopes, node.StartByte(), node.EndByte()); best != nil {
 		return best
 	}
 	if entry, ok := ac.gc.FindByQualifiedName(ac.fCtx.FilePath()); ok {
@@ -1141,21 +1169,40 @@ func isUsePosition(node coreast.Node) bool {
 // 局部变量不作为发起者：其声明内的动作（初始化表达式）归属所在函数，
 // 与 Java「局部变量不是 source kind」语义一致。
 func (ac *actionCtx) sourceOf(node coreast.Node) *model.CodeElement {
-	var best *model.CodeElement
-	bestSpan := -1
-	start, end := node.StartByte(), node.EndByte()
-	for _, entry := range ac.fCtx.Definitions() {
-		elem := entry.Element
-		if !isSourceKind(elem) {
-			continue
-		}
+	return innermostSpan(ac.sources, node.StartByte(), node.EndByte())
+}
+
+// buildSpanIndexes 为文件定义构建「关系发起者」与「声明作用域」两套区间索引。
+func buildSpanIndexes(fCtx core.FileContext) (sources, scopes []spanEntry) {
+	for _, entry := range fCtx.Definitions() {
 		if entry.Node == nil {
 			continue
 		}
 		s, e := entry.Node.StartByte(), entry.Node.EndByte()
-		if s <= start && end <= e {
-			if span := e - s; bestSpan < 0 || span < bestSpan {
-				bestSpan, best = span, elem
+		item := spanEntry{start: s, end: e, elem: entry.Element}
+		if isSourceKind(entry.Element) {
+			sources = append(sources, item)
+		}
+		if isScopeKind(entry.Element) {
+			scopes = append(scopes, item)
+		}
+	}
+	sort.Slice(sources, func(i, j int) bool { return sources[i].start < sources[j].start })
+	sort.Slice(scopes, func(i, j int) bool { return scopes[i].start < scopes[j].start })
+	return sources, scopes
+}
+
+// innermostSpan 返回包含 [start,end] 的最小跨度元素。
+// spans 按 start 升序，二分定位起点不超过 start 的前缀后向前扫描。
+func innermostSpan(spans []spanEntry, start, end int) *model.CodeElement {
+	hi := sort.Search(len(spans), func(i int) bool { return spans[i].start > start })
+	var best *model.CodeElement
+	bestSpan := -1
+	for i := hi - 1; i >= 0; i-- {
+		sp := spans[i]
+		if end <= sp.end {
+			if span := sp.end - sp.start; bestSpan < 0 || span < bestSpan {
+				bestSpan, best = span, sp.elem
 			}
 		}
 	}
