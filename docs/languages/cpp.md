@@ -287,6 +287,8 @@ Collector 依次遍历三组树根收集元素，`AddDefinition` 按 `QN + Kind 
 - **为什么必须去重**：同一动作节点在多棵树中都存在，直接遍历的重复率实测 caffe 64.9%、cpp-httplib 73.2%、DuckX 69.1%、protobuf 48.9%、cJSON 41.0%、property_tree 28.9%。
 - **为什么键不含 Source/Target**：同一字节区间在不同树中解析出的 Source/Target 一致（`Definitions()` 已合并、resolver 确定性）；若真不一致，取首棵树结果更稳定。
 - **死区**：`#if 0` 区间（`preproc.Result.Dead`）内的动作不产关系；Collector 侧同样跳过死区元素与 include，保证元素与关系口径一致。
+- **关系覆盖**：CALL（自由/成员/构造器，含栈对象构造 `T x(args)` / `T x{args}`）、CREATE、CAST、ASSIGN（含构造器初始化列表与指定初始化 `P p{.x=1}`）、USE（含 `using ns::f;` / `using Base::m;` 与 `namespace na = ns;`）、THROW；调用表达式模板实参 `make_shared<Foo>()` 产 `TYPE_ARG Foo`。
+- **索引**：`sourceOf` / 声明作用域按文件预构建「按 Start 排序的区间索引」二分定位；项目内 include 按 basename 分桶索引，避免每个动作节点 / include 重复线性扫描全部定义。
 
 ### 5.6 `#if 0` 死区
 
@@ -477,6 +479,15 @@ type expr struct {
 | **C++20 module/import 产伪 VARIABLE** | `export module foo;` / `import bar;` 被 tree-sitter 当普通 declaration，产出 `module`/`bar` 伪 VARIABLE，且无 IMPORT | Collector 按源码文本拦截顶层 module/import：不产元素；模块名记 File 的 `cpp.module.name`；`import` 合成文件级 Import（`cpp.rel.import.is_module`，`export import` 另记 `is_export`） |
 | **原始字符串内条件指令被误投影** | `R"(...#if 0...#endif...)"` 的内容被置空 | `scanGroups` 与 `blankUnselected` 都跟踪原始字符串状态（含自定义分隔符），其内行首 `#` 不再识别为指令（B2） |
 | **缺少链接规范 / inline namespace 元数据** | `extern "C"` 与 `inline namespace` 无任何标记 | `enrichMetadata` 沿父链记录 `cpp.linkage="C"`；namespace 记 `cpp.namespace.is_inline=true` |
+| **单大写字母真实类型被当模板变量** | `struct T` 的 `T` 参数/继承/返回全丢（`IsTypeVariable` 提前短路） | `ResolveType` 先查**本文件**真实类型，未命中才按模板变量返回 nil；Binder 单字母不做全局短名扫描；`lookupTypeQN` 校验元素 Path 属当前文件 |
+| **命名参数把 `类型 名` 整体当 QN** | `void f(AA x)` 的 `parameters_with_qn=["YY x"]` 查不到 → 回退外层 `O::AA` | Extractor 参数查找用 `paramTypeOnly` 剥离参数名后再查 |
+| **`case` 标签枚举常量不产 USE** | `case RED:` 无 USE（仅 `Color::GREEN` 有） | `isUsePosition` 不再排除 `case_statement` |
+| **typedef/using 底层类型无依赖** | `using Alias = Base;` 无任何类型关系 | `extractTypeArgRels` 增加 `model.Type` 分支（跳过 concept 与匿名 struct 承载、自引用） |
+| **栈对象构造不产 CALL** | `T x(args)` / `T x{args}` 只有 ASSIGN | `handleInit` 对 `argument_list`/`initializer_list` 按实参个数解析构造器并产 CALL |
+| **指定初始化无字段 ASSIGN** | `P p{.x=1}` 只产变量 ASSIGN | 新增 `handleDesignatedInit`：`initializer_pair` 的 `field_designator` 解析为字段并产 ASSIGN |
+| **using 声明 / 命名空间别名无关系** | `using ns::f;` / `using Base::m;` / `namespace na = ns;` 均无产出 | 新增 `handleUsingDecl` / `handleNamespaceAlias`：按所属作用域（含 File 回退）产 USE |
+| **调用表达式模板实参无 TypeArg** | `make_shared<Foo>()` 不产 `TYPE_ARG Foo` | `handleCall` 解析 `template_function` 的 `template_argument_list` 产 TYPE_ARG |
+| **O(defs) 线性扫描** | `sourceOf` / 声明作用域每个动作节点扫全部定义；`findFileByInclude` 每个 include 扫全部定义 | 预构建按 Start 排序的区间索引 + basename 分桶 include 索引 |
 
 ### 7.3 Binder 阶段的已知边界（2026-11-25 审计）
 
@@ -516,9 +527,9 @@ Binder 负责 raw 类型文本 → QN。以下缺陷均经探针实测，按优�
 
 - 三层测试 + e2e 黄金回归集，全部位于 `x/cpp/test/`。
 - 测试文件按语言归属拆分：`*_base_test.go`（C/C++ 共享）、`*_c_test.go`（C 独有）、`*_cpp_test.go`（C++ 独有）；共享断言集中在 `assert_helper.go`。
-- e2e 基线：`x/cpp/testdata/e2e/baseline.golden.jsonl`（1545 元素 + 2859 关系，LevelBalanced）。
-- 元素覆盖（基线实测）：FILE 95 / NAMESPACE 49 / CLASS 28 / STRUCT 121 / ENUM 22 / ENUM_CONSTANT 49 / TYPE 36 / MACRO 48 / FIELD 186 / FUNCTION 150 / FUNCTION_DECL 49 / METHOD 83 / METHOD_DECL 91 / VARIABLE 472 / SCOPE_BLOCK 38 / LAMBDA 28。
-- 关系覆盖（基线实测）：CONTAIN 1836 / USE 364 / ASSIGN 185 / TYPE_ARG 108 / CALL 87 / IMPL_LINK 70 / PARAMETER 58 / IMPORT 39 / RETURN 35 / EXTEND 24 / CAPTURE 24 / CAST 14 / CREATE 7 / THROW 6 / FRIEND 2。
+- e2e 基线：`x/cpp/testdata/e2e/baseline.golden.jsonl`（1610 元素 + 2970 关系，LevelBalanced）。
+- 元素覆盖（基线实测）：FILE 103 / NAMESPACE 51 / CLASS 28 / STRUCT 137 / ENUM 22 / ENUM_CONSTANT 49 / TYPE 41 / MACRO 48 / FIELD 200 / FUNCTION 155 / FUNCTION_DECL 53 / METHOD 83 / METHOD_DECL 95 / VARIABLE 478 / SCOPE_BLOCK 39 / LAMBDA 28。
+- 关系覆盖（基线实测）：CONTAIN 1902 / USE 370 / ASSIGN 192 / TYPE_ARG 127 / CALL 90 / IMPL_LINK 70 / PARAMETER 64 / IMPORT 39 / RETURN 36 / EXTEND 27 / CAPTURE 24 / CAST 14 / CREATE 7 / THROW 6 / FRIEND 2。
 - 基线（LevelBalanced）中 PARAMETER/RETURN 大幅减少，是因为当前样例的参数/返回类型多为基本类型（`int`/`void`），被外部符号降噪过滤；CONTAIN/USE/ASSIGN 等指向源码符号的关系不受影响。
 - 测试用例：
   | 测试 | 覆盖 |
@@ -572,6 +583,10 @@ Binder 负责 raw 类型文本 → QN。以下缺陷均经探针实测，按优�
   | `TestExtractorCppImplLink` | 1 头多源、签名、类外定义、static 不配对、只声明不配对、类内 inline 不配对 |
   | `TestExtractorCppFriend` | `friend class` / `friend` 函数 → FRIEND 关系（宿主类 → 友元类型/函数） |
   | `TestExtractorCppModule` | C++20 模块导入合成 IMPORT（`cpp.rel.import.is_module` / `is_export`） |
+  | `TestExtractorCppStackCtorCall` | 栈对象构造 `T x(args)` / `T x{args}` → 构造器 CALL（按实参个数选重载） |
+  | `TestExtractorCppDesignatedInit` | 指定初始化 `P p{.x=1}` → 字段 ASSIGN |
+  | `TestExtractorCppUsingDecl` | `using ns::f;` / `using Base::m;` / `namespace na = ns;` → USE |
+  | `TestExtractorCppCallTemplateArg` | 调用表达式模板实参 `make_shared<Foo>()` → `TYPE_ARG Foo` |
   | `TestResolverCall` | 自由函数/成员/指针成员/静态/命名空间限定调用 |
   | `TestResolverCreate` | `new` 表达式 + 构造器 CALL |
   | `TestResolverUse` / `TestResolverAssign` | 变量/字段/枚举常量读写 |
