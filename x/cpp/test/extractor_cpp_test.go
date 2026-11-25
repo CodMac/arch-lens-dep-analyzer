@@ -529,3 +529,25 @@ func TestExtractorCppTypedefDependency(t *testing.T) {
 		t.Errorf("anonymous typedef should not produce TypeArg")
 	}
 }
+
+// TestExtractorCppStackCtorCall 栈对象构造（T x(args) / T x{args}）产构造器 CALL。
+func TestExtractorCppStackCtorCall(t *testing.T) {
+	paths := ResolvePaths(t, "extractor/cpp/ctor_init", "*.cpp")
+	_, rels := RunExtraction(t, "x/cpp/testdata", paths)
+
+	// Ctor a(1) 与 Ctor c = Ctor(3) 各产一条 CALL → Ctor::Ctor(int)。
+	n := 0
+	for _, r := range rels {
+		if r.Type == model.Call && r.Source.QualifiedName == "ci_fn()" && r.Target.QualifiedName == "Ctor::Ctor(int)" {
+			n++
+		}
+	}
+	if n != 2 {
+		t.Errorf("CALL Ctor::Ctor(int) count = %d, want 2", n)
+	}
+	// Ctor b{1, 2} → Ctor::Ctor(int,int)
+	FindRel(t, rels, func(r *model.DependencyRelation) bool {
+		return r.Type == model.Call && r.Source.QualifiedName == "ci_fn()" &&
+			r.Target.QualifiedName == "Ctor::Ctor(int,int)"
+	})
+}

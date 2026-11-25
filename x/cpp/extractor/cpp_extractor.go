@@ -762,6 +762,29 @@ func (ac *actionCtx) handleInit(node coreast.Node) {
 		constants.RelAstKind:             "init_declarator",
 		constants.RelAssignIsInitializer: true,
 	})
+
+	// 栈对象构造：T x(args) / T x{args} 调用构造器（与 new T(...) 同语义）。
+	if value.Kind() != "argument_list" && value.Kind() != "initializer_list" {
+		return
+	}
+	p := node.Parent()
+	if p == nil {
+		return
+	}
+	typeNode := p.ChildByFieldName("type")
+	if typeNode == nil {
+		return
+	}
+	typ := ac.resolver.ResolveType(ac.gc, ac.fCtx, helper.GetNodeContent(typeNode, *ac.fCtx.SourceBytes()), model.Class)
+	if typ == nil {
+		return
+	}
+	if ctor := ac.constructorOf(typ, value.NamedChildCount()); ctor != nil {
+		ac.add(model.Call, source, ctor, node, map[string]interface{}{
+			constants.RelRawText: typ.Name,
+			constants.RelAstKind: "init_declarator",
+		})
+	}
 }
 
 // handleThrow 处理 throw 语句。
