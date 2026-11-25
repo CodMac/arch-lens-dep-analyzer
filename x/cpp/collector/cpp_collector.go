@@ -429,14 +429,25 @@ func (c *Collector) collectBasicDefinitions(node coreast.Node, fCtx core.FileCon
 	src := *fCtx.SourceBytes()
 
 	// friend 声明（friend void f(); / friend class X;）不是成员定义/声明，
-	// 不产元素；其内部 declaration 也不应挂到当前类下。
+	// 不产类成员元素；但需记录友元目标（供 FRIEND 关系），并把友元函数声明
+	// 注册为命名空间级 FunctionDecl（它不是类成员）。
 	if node.Kind() == "friend_declaration" {
+		c.collectFriendDeclaration(node, fCtx, currentQN, tmplParams)
 		return
 	}
 
 	// #if 0 死区：原始树会保留死区代码，跳过其元素。
 	if node.IsNamed() && c.inDeadZone(fCtx.FilePath(), node) {
 		return
+	}
+
+	// 控制流语句的声明作用域：catch 参数、if/while/switch 条件声明、
+	// for 初始化声明、range-for 循环变量都只在该语句内可见，必须挂到
+	// 语句主执行体的 ScopeBlock 下，否则会泄漏到外层函数并导致 USE 误绑定。
+	if isControlFlowScope(node.Kind()) {
+		if c.collectControlFlowScope(node, fCtx, currentQN, tmplParams, occurrences) {
+			return
+		}
 	}
 
 	// 模板声明：记录参数文本，传递给内部类型/函数。
@@ -752,6 +763,26 @@ func (c *Collector) identifyElements(node coreast.Node, fCtx core.FileContext, t
 		}
 		name := helper.GetNodeContent(nameNode, src)
 		return []identified{{elem: newElem(model.Type, name, tmplParams)}}, model.Type
+
+	case "concept_definition":
+		// C++20 concept 是一种具名类型约束，归 TYPE；约束表达式记 underlying。
+		nameNode := node.ChildByFieldName("name")
+		if nameNode == nil {
+			for i := 0; i < node.NamedChildCount(); i++ {
+				if ch := node.NamedChild(i); ch != nil && ch.Kind() == "identifier" {
+					nameNode = ch
+					break
+				}
+			}
+		}
+		if nameNode == nil {
+			return nil, ""
+		}
+		name := helper.GetNodeContent(nameNode, src)
+		elem := newElem(model.Type, name, tmplParams)
+		elem.GetMores()[constants.IsDeclaration] = false
+		elem.GetMores()[constants.TypeIsConcept] = true
+		return []identified{{elem: elem}}, model.Type
 
 	case "namespace_definition":
 		nameNode := node.ChildByFieldName("name")
@@ -1141,6 +1172,9 @@ func isMethodContext(node, decl coreast.Node, src []byte) bool {
 	}
 	for curr := node.Parent(); curr != nil; curr = curr.Parent() {
 		switch curr.Kind() {
+		case "friend_declaration":
+			// 友元函数是命名空间级函数，不是类成员。
+			return false
 		case "field_declaration_list":
 			p := curr.Parent()
 			if p != nil && (p.Kind() == "class_specifier" || p.Kind() == "struct_specifier" || p.Kind() == "union_specifier") {
@@ -1173,6 +1207,159 @@ func isTypeReference(node coreast.Node) bool {
 
 // isBlockScope 判定 compound_statement 是否应作为独立作用域块。
 // 函数体/Lambda 体的块由函数/Lambda 自身承载，不重复建块。
+// isControlFlowScope 判定语句是否引入独立声明作用域。
+func isControlFlowScope(kind string) bool {
+	switch kind {
+	case "if_statement", "for_statement", "while_statement", "do_statement",
+		"switch_statement", "try_statement", "catch_clause", "for_range_loop":
+		return true
+	}
+	return false
+}
+
+// primaryBody 返回语句的主执行体：if 取 consequence，其余取 body 字段；
+// 兜底取第一个 compound_statement 子节点。
+func primaryBody(node coreast.Node) coreast.Node {
+	if node.Kind() == "if_statement" {
+		if b := node.ChildByFieldName("consequence"); b != nil {
+			return b
+		}
+	} else if b := node.ChildByFieldName("body"); b != nil {
+		return b
+	}
+	for i := 0; i < node.NamedChildCount(); i++ {
+		if ch := node.NamedChild(i); ch != nil && ch.Kind() == "compound_statement" {
+			return ch
+		}
+	}
+	return nil
+}
+
+// isBodyLike 判定子节点是否应在外层作用域处理（分支体/嵌套语句），
+// 而非挂到当前语句的声明作用域。
+func isBodyLike(kind string) bool {
+	switch kind {
+	case "compound_statement", "else_clause", "catch_clause",
+		"if_statement", "for_statement", "while_statement", "do_statement",
+		"switch_statement", "try_statement", "for_range_loop":
+		return true
+	}
+	return false
+}
+
+// collectControlFlowScope 把语句内的声明挂到主执行体的 ScopeBlock 下。
+// 先处理主执行体（创建语句体块，编号与原先一致），再把其余子节点按其性质
+// 分派：分支体/嵌套语句留在外层作用域，声明/参数/循环变量挂到块下。
+func (c *Collector) collectControlFlowScope(node coreast.Node, fCtx core.FileContext, currentQN, tmplParams string, occurrences map[string]int) bool {
+	body := primaryBody(node)
+	if body == nil {
+		return false
+	}
+	// 主执行体是 compound_statement 时才会产 ScopeBlock；用 #block 计数
+	// 直接推出块 QN，避免依赖 Definitions 查找（跨树补元素时 AddDefinition
+	// 会按 QN 去重，第二棵树新建的块条目不会入库）。
+	before := occurrences["#block"]
+	c.collectBasicDefinitions(body, fCtx, currentQN, tmplParams, occurrences)
+	if occurrences["#block"] == before {
+		return false
+	}
+	blockQN := c.resolver.BuildQualifiedName(currentQN, fmt.Sprintf("block$%d", occurrences["#block"]))
+
+	childOcc := make(map[string]int)
+	src := *fCtx.SourceBytes()
+	// range-for 的循环变量不在 declaration 节点内，需显式注册到块下。
+	if node.Kind() == "for_range_loop" {
+		if items, _ := c.identifyElements(node, fCtx, tmplParams); len(items) > 0 {
+			for i := range items {
+				it := &items[i]
+				c.assignQN(it, blockQN, childOcc, src)
+				it.elem.Path = fCtx.FilePath()
+				it.elem.Location = helper.ExtractLocation(node, fCtx.FilePath())
+				fCtx.AddDefinition(&core.DefinitionEntry{
+					Element: it.elem, ParentQN: it.parentQN, IsDeclaration: it.isDecl, Node: node,
+				})
+			}
+		}
+	}
+
+	for i := 0; i < node.ChildCount(); i++ {
+		ch := node.Child(i)
+		if ch == nil || ch.Equal(body) {
+			continue
+		}
+		if isBodyLike(ch.Kind()) {
+			// 分支体/嵌套语句仍属外层作用域，必须沿用外层 occurrences，
+			// 否则块序号会从 1 重新计数并与已有块 QN 冲突。
+			c.collectBasicDefinitions(ch, fCtx, currentQN, tmplParams, occurrences)
+			continue
+		}
+		c.collectBasicDefinitions(ch, fCtx, blockQN, tmplParams, childOcc)
+	}
+	return true
+}
+
+// collectFriendDeclaration 处理类内 friend 声明：
+//   - friend class/struct X;  → 记录友元类型文本
+//   - friend <decl>;          → 记录友元函数 "名(签名)"，并在命名空间作用域
+//     注册 FunctionDecl（友元函数不是类成员）
+func (c *Collector) collectFriendDeclaration(node coreast.Node, fCtx core.FileContext, currentQN, tmplParams string) {
+	src := *fCtx.SourceBytes()
+	var friendType, friendFunc, friendName string
+	var innerDecl coreast.Node
+
+	for i := 0; i < node.NamedChildCount(); i++ {
+		ch := node.NamedChild(i)
+		if ch == nil {
+			continue
+		}
+		switch ch.Kind() {
+		case "type_identifier", "qualified_identifier":
+			friendType = normalizeQualified(helper.GetNodeContent(ch, src))
+		case "declaration":
+			innerDecl = ch
+			for _, decl := range collectDeclarators(ch) {
+				// 第二返回值表示「是否限定名」，不是成功标志。
+				name, _ := declaratorFullName(decl, src)
+				if name == "" {
+					continue
+				}
+				friendName = name
+				friendFunc = name + paramSignature(decl, src)
+				break
+			}
+		}
+	}
+
+	if entry, ok := fCtx.FindByQualifiedName(currentQN); ok {
+		mores := entry.Element.GetMores()
+		if friendType != "" {
+			mores[constants.ClassFriendTypes] = appendMoresString(mores[constants.ClassFriendTypes], friendType)
+		}
+		if friendFunc != "" {
+			mores[constants.ClassFriendFunctions] = appendMoresString(mores[constants.ClassFriendFunctions], friendFunc)
+		}
+	}
+
+	// 非限定友元函数声明注入最近的命名空间作用域（成为真实 FunctionDecl）；
+	// 限定友元（friend void Z::g();）声明的是别的类的成员，不能当自由函数注册。
+	if innerDecl != nil && friendName != "" && !strings.Contains(friendName, helper.QNSep) {
+		c.collectBasicDefinitions(innerDecl, fCtx, helper.PkgOf(currentQN), tmplParams, make(map[string]int))
+	}
+}
+
+// appendMoresString 向 []string 型 Mores 追加值（幂等：原始树补元素会重复遇到同一 friend）。
+func appendMoresString(cur interface{}, val string) []string {
+	if arr, ok := cur.([]string); ok {
+		for _, v := range arr {
+			if v == val {
+				return arr
+			}
+		}
+		return append(arr, val)
+	}
+	return []string{val}
+}
+
 func isBlockScope(node coreast.Node) bool {
 	p := node.Parent()
 	if p == nil {
@@ -1671,6 +1858,20 @@ func (c *Collector) enrichType(elem *model.CodeElement, node coreast.Node, src [
 			raw := helper.GetNodeContent(t, src)
 			// type_descriptor 的文本含内部类型，直接使用即可。
 			mores[constants.TypeUnderlying] = normalizeTypeText(raw)
+		}
+	case "concept_definition":
+		// 约束表达式（`= ` 之后到 `;` 之前）记入 underlying，供展示/审计。
+		if v := node.ChildByFieldName("value"); v != nil {
+			mores[constants.TypeUnderlying] = normalizeTypeText(helper.GetNodeContent(v, src))
+		} else {
+			for i := 0; i < node.NamedChildCount(); i++ {
+				ch := node.NamedChild(i)
+				if ch == nil || ch.Kind() == "identifier" {
+					continue
+				}
+				mores[constants.TypeUnderlying] = normalizeTypeText(helper.GetNodeContent(ch, src))
+				break
+			}
 		}
 	}
 }

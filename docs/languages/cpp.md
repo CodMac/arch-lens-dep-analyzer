@@ -3,7 +3,7 @@
 > 适用范围：`x/cpp/` · 与 [qn-format.md](../qn-format.md)（QN 契约）、[language-extension.md](../language-extension.md)（SPI 契约）互为补充
 >
 > 本文档回答「C/C++ 支持到什么程度」：元素/关系覆盖清单、声明-实现配对模型、条件编译策略、实现边界与已知限制。
-> 行为契约由 `x/cpp/testdata/e2e/baseline.golden.jsonl`（4348 行 = 1499 元素 + 2849 关系，LevelBalanced）锚定。
+> 行为契约由 `x/cpp/testdata/e2e/baseline.golden.jsonl`（4325 行 = 1511 元素 + 2814 关系，LevelBalanced）锚定。
 
 ## 1. 总体状态
 
@@ -22,12 +22,24 @@ C 与 C++ **共用同一套实现**（`x/cpp/`），仅 Parser 层按扩展名�
 
 > CLI 侧 `-lang c` 扫描 `.c`/`.h`，`-lang cpp` 扫描 `.cpp`/`.hpp`/`.cc`/`.cxx`/`.h`（见 `cmd/analyzer/main.go` 的 `langExtensions`）。
 
+### 1.2 处理流水线
+
+| 阶段 | 入口 | 职责 | 详见 |
+|---|---|---|---|
+| Parser | `x/cpp/cpp_parser.go` + `x/cpp/preproc` | 条件编译双树（投影树 + 原始树）、宏归一化（等长置空）、分支回补、死区标注 | §5 |
+| Collector | `x/cpp/collector` | Step 0–6：文件元素 → include → 递归定义（QN 分配 / 匿名承载 / 条件标注 / 控制流声明作用域 / friend）→ 原始树补元素 → 分支回补 → 元数据增强（含 concept）→ namespace 汇总 → 展示字段 → 动作树根 | §2、§5.2–5.3 |
+| Binder | `x/cpp/binder` | raw 类型文本 → QN，typedef/using 别名链递归展开 | §6.3 |
+| Extractor | `x/cpp/extractor` | 结构关系 + 动作关系 + Capture 派生；多树按字节区间去重 | §3、§5.5 |
+| Linker | `x/cpp/linker` | Contain 拓扑 + ImplLink 签名配对 | §4 |
+| SymbolResolver | `x/cpp/symbol_resolver` | 两段式：归一化为 `expr` → 作用域链/继承链查找 + 链式类型传播 | §6.2 |
+| NoiseFilter | `x/cpp/noise_filter` | 复用 `core.DefaultNoiseFilter` 三态；ImplLink 恒保留 | §8 |
+
 ## 2. 元素覆盖（CodeElement）
 
 | 元素 | QN 格式 | 说明 |
 |---|---|---|
 | File | `相对路径`（正斜杠） | 头文件与源文件各自是独立 File 元素 |
-| Namespace | `ns1` / `ns1::ns2` | 嵌套 namespace 逐级拆分，每级独立元素；匿名 namespace 记 `$anon` |
+| Namespace | `ns1` / `ns1::ns2` | 嵌套 namespace 逐级拆分，每级独立元素；匿名 namespace 记 `$anon`；**可重开**，同文件同名重开归一为同一 QN（不参与 `$N`） |
 | Struct / Class | `ns::类型名` | `struct`/`union` 均产 STRUCT（union 记 `cpp.struct.is_union`）；类内嵌套类型 `Outer::Inner` |
 | Enum / EnumConstant | `ns::枚举名` / `ns::枚举名::常量` | `enum class` 记 `cpp.enum.is_scoped=true` |
 | Function（定义） | `[ns::]函数名(参数类型列表)` | 有函数体 |
@@ -35,11 +47,11 @@ C 与 C++ **共用同一套实现**（`x/cpp/`），仅 Parser 层按扩展名�
 | Method（定义） | `ns::类名::方法名(参数类型列表)` | 类内定义或类外 `ns::Class::method` 定义 |
 | MethodDecl（声明） | 同上 | 类内成员声明 |
 | Field | `类QN::字段名` | 含 static / const 字段 |
-| Type（typedef / using） | `[ns::]别名` | 底层类型记 `cpp.type.underlying` |
-| Variable | `所在作用域QN::变量名` | 局部变量挂函数/块/Lambda；全局变量挂文件（`cpp.variable.is_global=true`） |
+| Type（typedef / using / concept） | `[ns::]别名` | typedef/using 的底层类型记 `cpp.type.underlying`；与同名 struct tag 以同 QN 不同 Kind 共存。C++20 `concept X = 约束;` 同样归 Type，`cpp.type.underlying` 记约束表达式原文，`cpp.is_declaration=false` + `cpp.type.is_concept=true`（不参与别名展开） |
+| Variable | `所在作用域QN::变量名` | 局部变量挂函数/块/Lambda；全局变量挂文件（`cpp.variable.is_global=true`）；控制流语句头部的声明挂语句体块（§2.2.1） |
 | Macro | `宏名` | `#define`；函数式宏记 `cpp.macro.is_function_like=true`，宏体原文入 `cpp.macro.body` |
 | Lambda | `容器QN::lambda$N` | 形参/局部变量挂其下 |
-| ScopeBlock | `容器QN::block$N` | 仅非函数体/Lambda 体的 `compound_statement`（if/for/switch/catch 体等） |
+| ScopeBlock | `容器QN::block$N` | 非函数体/Lambda 体的 `compound_statement`（if/for/switch/catch 体等）；控制流语句头部的声明挂对应语句体块（§2.2.1） |
 
 ### 2.1 参数签名规则
 
@@ -63,12 +75,59 @@ C 与 C++ **共用同一套实现**（`x/cpp/`），仅 Parser 层按扩展名�
 | `struct { int a; } obj;` | 变量名 | `obj::a` |
 | `struct Outer { struct { int a; } pair; };` | 外层字段名 | `Outer::pair::a` |
 
+### 2.2.1 控制流语句作用域
+
+C/C++ 允许在控制流语句头部声明变量，其作用域是**该语句本身**（含语句体），而不是外层函数体。Collector 为这类语句创建/复用**语句体块**（`ScopeBlock`，`容器QN::block$N`），头部声明挂到该块下：
+
+| 形态 | 头部声明归属 | 示例 |
+|---|---|---|
+| `if (int x = f(); x)` / `if (auto p = g())` | 对应 `if` 体块 | `f()::block$1::x` |
+| `for (int i = 0; ...)` / `for (auto& e : xs)` | 对应 `for` 体块（range-for 变量同） | `f()::block$2::i` |
+| `while (T* p = next())` / `switch (int k = ...)` | 对应语句体块 | `f()::block$3::p` |
+| `try { } catch (const E& e) { }` | 对应 `catch_clause` 体块 | `f()::block$4::e` |
+
+- 块编号由容器内 `#block` 计数确定性推导，与同名普通变量解耦（§2.3.1）。
+- 语句体本身若已产 `ScopeBlock`（`compound_statement`），头部声明复用同一块；`else`/`catch` 等 body-like 子节点沿用外层计数，避免块号重排。
+- Resolver 的 `scopeChain` 对「位于语句头部（条件/初始化/更新表达式）的节点」补入对应语句体块，使头部表达式中的变量读取解析到该块声明，且不会跨函数误绑同名变量。
+
+### 2.2.2 friend 声明
+
+`friend` 声明**不产独立元素**，而是：
+
+- 在宿主类元素的 Mores 中记录：`cpp.class.friend_types`（`friend class X;` 的类型文本列表）、`cpp.class.friend_functions`（`friend void f(int);` 的 `名(签名)` 列表）。
+- 非限定的友元函数声明（`friend void f(Outer&);`）额外注册为**命名空间级 `FunctionDecl`**，使其可被调用解析与 ImplLink 配对。
+- Extractor 产出 `FRIEND` 关系：Source = 宿主类，Target = 友元类型 / 友元函数（按命名空间上溯 + 文件内短名解析）。
+
 ### 2.3 声明 / 定义双元素
 
 `FunctionDecl`/`MethodDecl` 与 `Function`/`Method` **成对共存**，QN 相同、Kind 不同：
 
-- `BaseGlobalContext` 的全量索引键为 `QN + "|" + Kind`，两者不互相吞并。
+- 全量索引键为 `QN + "|" + Kind + "|" + Path`，两者不互相吞并。
 - `FindByQualifiedName` **定义优先**：先注册声明、后注册定义时定义覆盖声明；纯声明（无定义）仍可命中。
+
+### 2.3.1 同名共存与 `$N` 消歧
+
+`$N` 后缀只在「同一文件、同一容器、同一 Kind」内对重名计数，键为 `名字 + 签名 + "|" + Kind`（`assignQN`）。据此：
+
+| 场景 | 是否产生 `$N` | 说明 |
+|---|---|---|
+| 跨文件同名（`static` 函数、多个示例 `main`、合并副本） | 否 | 靠索引键的 Path 维度共存（见 §2.3.2） |
+| 不同 Kind 同名（`typedef struct X {...} X;` 的 STRUCT 与 TYPE） | 否 | QN+Kind 才是元素身份；tag 与 typedef 以同 QN 不同 Kind 共存 |
+| 同文件 namespace 重开 | 否 | namespace 恒用裸名（`assignQN` 对 `model.Namespace` 直接返回），子元素前缀不被 `$2` 传染 |
+| 同文件同容器同 Kind 重名（条件编译多分支定义、非法重定义） | 是 | 真实多分支定义，语义正确 |
+| Lambda / ScopeBlock | 是（独立计数） | 计数键为 `#lambda` / `#block`，与同名普通变量解耦 |
+
+### 2.3.2 全局索引与可见性
+
+`BaseGlobalContext` 维护三个索引：
+
+| 索引 | 键 | 用途 |
+|---|---|---|
+| `qnIndex` | `QN\|Kind\|Path` | 全量去重/共存；声明与定义同键时定义覆盖声明 |
+| `primaryIndex` | 裸 `QN` | `FindByQualifiedName` 的 O(1) 查找，定义优先 |
+| `overloadIndex` | 不含参数的 QN | `FindOverloadCandidates`，参与 Kind 由 `GlobalContextRules.OverloadKinds` 注入（C/C++ 含 Function/Method/FunctionDecl/MethodDecl） |
+
+已知边界：`primaryIndex` / `overloadIndex` 仍以**裸 QN** 为键。当同一 QN 在多个翻译单元出现（`static` 函数、`inline`、匿名 namespace 的 `$anon` 实体）时，`FindByQualifiedName` 只返回其中一个，无法表达 per-TU 可见性。这是索引层的独立设计问题，**不应**用 `$N` 解决（加后缀反而破坏跨文件合法共存）。
 
 ### 2.4 展示层三字段（NamespaceQN / EnclosingQN / TypeQN）
 
@@ -97,6 +156,7 @@ Collector 末尾（Step 5，全部定义注册与 namespace 汇总之后）统�
 | E2 | 变量承载的匿名 struct | `struct { int x; } obj;` 的字段 `obj::x` 的 `TypeQN` 为空 |
 | E3 | 跨文件嵌套类型 | 类外定义且本文件不可见父类型链时，`TypeQN` 只能取 QN 结构可判定的层级 |
 | E4 | 单段限定定义的宿主歧义 | `GlobalCls::method(int)` 这类单段前缀无法区分「全局类型」与「namespace」，按类型处理（`NamespaceQN` 留空） |
+| E5 | 同 QN 跨 Kind 的 TypeQN 查找 | `typedef struct X {...} X;` 的字段 `X::f` 的 `TypeQN=X`，但裸 QN 主索引可能返回 TYPE 而非 STRUCT；消费方判定「是否具名类型」时须按 QN 汇总全部 Kind（展示层不变量测试即如此） |
 
 ## 3. 关系覆盖（DependencyRelation）
 
@@ -110,6 +170,7 @@ Collector 末尾（Step 5，全部定义注册与 namespace 汇总之后）统�
 | Parameter | 函数/方法形参类型（`cpp.rel.raw_text`） |
 | Return | 函数/方法返回类型（`void` 不产） |
 | TypeArg | 变量/字段类型 + 模板实参（`Foo<Bar>` 的 `Bar` 各产一条） |
+| Friend | 友元声明（Source = 宿主类，Target = 友元类型/函数），见 §2.2.2 |
 | ImplLink | 声明-实现链接（定义 → 声明），见 §4 |
 
 ### 3.2 动作关系（带 Location）
@@ -190,7 +251,7 @@ tree-sitter **不做宏展开**，条件编译各分支在 AST 中互斥，且�
 
 ### 5.2 元素合并（Collector）
 
-Collector 依次遍历三组树根收集元素，`AddDefinition` 按 `QN + Kind` 幂等去重：
+Collector 依次遍历三组树根收集元素，`AddDefinition` 按 `QN + Kind + Path` 幂等去重：
 
 1. **主树**（投影树；退化时为原始树）
 2. **原始树**（`RawRoot()`，非 nil 时）——补齐嵌套组合与其余分支的元素
@@ -237,6 +298,26 @@ Collector 依次遍历三组树根收集元素，`AddDefinition` 按 `QN + Kind`
 **判定必须要求「完全包含」**（`start >= r.Start && end <= r.End`），不能只看起始字节：tree-sitter 的错误恢复会在死区边界产出跨区 `ERROR` 节点（起点在死区内、终点在区外，实测可跨 667 行），只看起点会把 `#endif` 之后的整段正常代码误判为死区而丢弃（cpp-httplib `test.cc` 曾因此丢 315 个元素）。
 
 死区代码**不入图**（不产元素、不产关系），也不打 `cpp.condition` 标签——它永远不会被编译，不应参与架构度量。
+
+### 5.7 宏归一化（`preproc.NormalizeMacros`）
+
+tree-sitter 不展开宏，装饰性/注解性宏会破坏语法结构（把类型解析成函数、把函数体解析成文件级块）。投影树与原始树解析前都先做**等长**宏归一化，把宏名/实参按字节置为空格，保证 AST 节点字节坐标仍可映射回原始源码（Collector 从原始源码按字节区间取文本）。
+
+管线（`normalizeTypeMacros`，全部等长）：
+
+1. `typeMacroBeforeRe` / `typeMacroAfterRe`：置空 `class GTEST_API_ Foo`、`struct Foo GTEST_API_` 中的类型注解宏（允许 `:`/`{` 出现在下一行）。**`class`/`struct`/`union`/`enum` 关键字不当类型名**——`enum class E {` 的 `class` 与 `E` 必须保留，否则全大写枚举名（`E`/`COLOR`）会被误判为宏而置空，导致 ENUM 元素丢失。
+2. `normalizeProtoMacros`：行首 `MACRO(type) fn(` 的返回类型宏调用改写为 `type` + 等长空格（恢复函数声明）。
+3. `normalizeTypeNameFunctionMacros`：`class GTEST_1_TUPLE_(T) {` 置空类型名后的宏实参，保留宏名作类型名。
+4. `normalizeStatementMacros`：逐行处理
+   - 独占一行的对象式宏（Unity `EXPECT_ABORT_BEGIN`）置空；
+   - 行首连续对象式宏 + 内置/限定类型（`GTEST_NO_INLINE_ std::string`）置空；
+   - 限定符后的函数式宏（`static GTEST_ADD_REF_(...)`）连同平衡括号置空；
+   - 整行单个函数式宏调用且不带分号（`GTEST_DISABLE_MSC_WARNINGS_PUSH_(4180)`）置空；
+   - 紧邻 `operator` 之前的对象式宏（`PUGIXML_FUNCTION operator&&`）置空；
+   - 函数声明符之后的尾随宏（`f() PUGIXML_NOEXCEPT {`）置空。
+5. `normalizeTestMacros`：`TEST(args) {` 改写为等长 `void <首个标识符>() {`，让测试体成为函数作用域而非文件级孤儿块。函数名取 args 首个标识符以保持与原始字节一致；字符串实参（doctest `TEST_CASE("...")`）无法对齐，列为已知限制（§7.1 B8）。
+
+宏名识别：本文件有 `#define` 时用宏表；宏定义在被包含头文件（本文件不可见）时，按「全大写且含下划线」的宏名形态兜底（`isMacroLikeName`）。
 
 ## 6. QN 与解析规则
 
@@ -308,6 +389,7 @@ type expr struct {
 
 - Collector 记录 `cpp.type.underlying`（底层类型文本）。
 - Binder 构建全局别名表并在类型绑定时**递归展开**（最多 8 层防环），再解析为 QN。
+- **concept 不参与别名展开**：C++20 concept 的 `cpp.type.underlying` 是约束表达式（如 `sizeof(T) <= 4`）而非类型，元素带 `cpp.type.is_concept=true`；Binder 的别名表与底层类型绑定均跳过 concept，避免同名类型引用被约束表达式污染。
 - **匿名承载 typedef 不展开**：`typedef struct {...} Point;` 的底层文本是匿名结构体（`struct { int x; int y; }`），不是可解析的类型名；此时别名本身即目标类型，Binder 直接绑定到 `Point`。否则变量的 `cpp.variable.type_with_qn` 会退化为匿名结构体文本，`p.x` 的接收者类型解析失败后退回全局短名扫描，命中同名参数/变量（结果随并行收集顺序变化而不确定）。
 
 ### 6.4 外部符号兜底
@@ -332,7 +414,7 @@ type expr struct {
 | 7 | **函数指针变量** | `int (*fp)(int)` 识别为变量（非函数声明）；作为参数类型记 `(*)` |
 | 8 | **预处理指令位置** | `#include` 出现在任意位置（含条件分支内）均被收集为文件级 Import，不区分包含位置 |
 | 9 | **多继承** | `base_class_clause` 的多个基类各产一条 EXTEND；不区分 `virtual` 继承语义 |
-| 10 | **匿名 namespace** | 记名 `$anon`，不与外部链接语义区分 |
+| 10 | **匿名 namespace** | 记名 `$anon`，不与外部链接语义区分；同文件重开归一为 `$anon`，跨文件各 TU 共享 QN 的解析歧义见 §2.3.2 |
 | 11 | **`extern "C"`** | `linkage_specification` 内的声明照常收集，不做 C/C++ 链接名区分 |
 | 12 | **头文件重复包含** | 无 include guard 求解；同一头文件被多个源 include 时各产一条 Import |
 | 13 | **外部类型链式断开** | 链式接收者为外部类型（如 `std::vector<T>::begin()`）时，其返回类型无源码符号可查，链在此处断开并退回短名兜底；但**直接**成员调用按外部类型归属（`vec.push_back()` → `std::vector::push_back`） |
@@ -351,7 +433,9 @@ type expr struct {
 | B7 | **`$N` 元素增量** | 原始树补齐多分支同名符号时产生 `$N` 变体（实测 caffe +16、cpp-httplib +2，其余项目 0） | QN 集合相对单树方案有增量；属真实多分支定义，语义正确 | 已接受 |
 | B8 | **字符串实参测试宏** | 形如 doctest `TEST_CASE("...") { ... }` 的宏体仍为文件级块，内部 lambda/局部变量无容器 | 改写为函数需从字符串实参生成函数名，但 Collector 按 AST 字节区间从**原始源码**取文本，生成名无法与原始字节对齐；仅 `TEST`/`TEST_F`/`TEST_P` 等「首参为标识符」的宏可安全改写 | 已知限制 |
 
-### 7.2 已修复的解析缺陷（2026-11-24 审计）
+### 7.2 已修复的解析缺陷（2026-11-24/25 六项目真实代码审计）
+
+对 caffe / cJSON / cpp-httplib / DuckX / property_tree / protobuf 做 LevelRaw 全文件覆盖审计后修复。按性质分三类：**宏归一化与语法恢复**（返回类型宏、类型注解宏、语句宏、测试宏、operator/尾随宏）、**QN 与索引**（跨文件同名、CRLF、前导 `::`、匿名 enum、`$N` 键、原型形参、namespace 重开）、**关系解析目标**（构造器 CALL、ASSIGN/THROW/CALL 目标、EXTEND 自环、PARAMETER/CONTAIN 端点）。
 
 | 缺陷 | 修复前 | 修复方式 |
 |---|---|---|
@@ -368,7 +452,6 @@ type expr struct {
 | **行首可见性宏与返回类型粘连** | `GTEST_NO_INLINE_ GTEST_NO_TAIL_CALL_ std::string\nGetCurrent...(...)` 未置空，被解析成带 ERROR 的 qualified_identifier，QN 混入 `\r`（httplib 3 条） | `preproc.blankLeadingObjectMacros`：行首连续对象式宏后紧跟内置类型或 `X::` 限定类型时全部置空；宏定义在被包含的头文件（本文件无 `#define`）时按「全大写且含下划线」的宏名形态识别 |
 | **限定符后的函数式返回类型宏** | `static GTEST_ADD_REF_(GTEST_TUPLE_ELEMENT_(0, Tuple))` 的内层宏实参被当参数列表，产出 `(0,,Tuple)` 空参数（caffe 10 条） | `preproc.blankQualifiedFunctionMacro`：`static/inline/...` 后的函数式宏连同平衡括号实参一并置空 |
 | **整行函数式宏调用破坏类体** | 类体内 `GTEST_DISABLE_MSC_WARNINGS_PUSH_(4180)` 未展开被当错误声明，类体大括号失配，后续成员被吞进类内（httplib `gtest-printers.h` 的 `PrintToString` 变 VARIABLE） | `preproc.blankStandaloneFunctionMacro`：整行只有一个函数式宏调用且**不带分号**时置空宏名与实参；带分号的语句宏保持原样以保留调用关系 |
-| **整行函数式宏破坏类体大括号** | 类体内的 `GTEST_DISABLE_MSC_WARNINGS_PUSH_(4180)` 未展开被当错误声明，类体大括号失配，后续成员被吞进类内（httplib `gtest-printers.h` 的 `PrintToString` 变成类成员变量） | `preproc.blankStandaloneFunctionMacro`：整行只有一个函数式宏调用且**不带分号**时置空宏名与实参（带分号的语句宏保留，其调用关系不受影响） |
 | **伪 namespace 悬空 CONTAIN** | 异常 QN 的父级 namespace 不存在 | Linker 仅当父级是真实 Namespace 元素时才建层级 CONTAIN |
 | **跨文件同 QN+Kind 丢元素** | 全局索引键为 `QN\|Kind`，`static` 函数、多个示例 `main`、合并副本（protobuf php/ruby upb）跨文件同名时只留第一个；cJSON 29 个 main 只注册 3 个，protobuf 195 个文件只剩 FILE | `core.qnKey` 加入文件路径：`QN\|Kind\|Path`。同文件同 QN+Kind 仍幂等去重；声明/定义（不同 Kind）与跨文件同名定义共存 |
 | **CRLF 把 `\r` 写进 QN** | `normalizeQualified` 只剥空格/`\t`/`\n`，CRLF 源文件跨行限定名残留 `\r`（protobuf 3078 个元素/71 文件） | `normalizeQualified` 增加剥 `\r` |
@@ -383,13 +466,17 @@ type expr struct {
 | **tag 与 typedef 同名跨 Kind 误消歧** | `typedef struct cJSON {...} cJSON;` 的 struct tag 被挤成 `cJSON$2`（cJSON 3 处、httplib 2 处）；下游 `HTTPParser : public http_parser` 的 EXTEND 命中 typedef TYPE | `assignQN` 消歧键加入 Kind：`name+suffix+Kind`。QN+Kind 才是元素身份，跨 Kind 同名不触发 `$N`，tag 与 typedef 以同 QN 不同 Kind 共存 |
 | **原型形参幽灵 Variable** | `f(int a, char* b);` 原型的形参被建模为 `f(int,char*)::a` / `::b`（caffe 907、httplib 796、DuckX 294、cJSON 14、property_tree 10） | 纯声明（FunctionDecl/MethodDecl）不下钻参数列表；定义形参照常收集（形参在作用域内） |
 | **重开 namespace 被误消歧** | 同文件两次 `namespace ns {}` 产出 `ns` / `ns$2`，子元素前缀被传染为 `ns$2::T`，导致 `ns::T` 引用解析不到、跨重开块的声明/定义无法配对 | `assignQN` 对 `model.Namespace` 恒用裸名、不参与 `$N` 计数；重开块归一为同一 QN（全局索引按 QN+Kind+Path 去重） |
+| **`enum class` 全大写名被置空** | `enum class E {` / `enum class COLOR {` 的 `class` 被当类型名、`E`/`COLOR` 被当类型注解宏置空，ENUM 元素与常量全丢 | `typeMacroAfterRe` 的替换回调跳过 `class/struct/union/enum` 关键字（`isTypeKeyword`），保留枚举名 |
+| **控制流头部声明挂错作用域** | `if (int x = ...)`、`for (int i = ...)`、`catch (E e)` 的声明挂到函数体（`f()::x`/`f()::i`/`f()::e`），且第二个 `if` 内的读取误绑到第一个 `x` | Collector 新增 `collectControlFlowScope`：头部声明挂语句体块（`block$N`）；Resolver `scopeChain` 对语句头部节点补入对应块，避免跨语句/跨函数误绑 |
+| **C++20 concept 不产元素** | `concept Small = ...;` 无任何元素，约束关系不可见 | `concept_definition` 归 Type：`cpp.type.underlying` 记约束表达式，`cpp.is_declaration=false` |
+| **friend 声明被整体跳过** | `friend class X;` / `friend void f(T&);` 无元素、无关系，友元授权不可见 | 宿主类 Mores 记 `cpp.class.friend_types` / `cpp.class.friend_functions`；非限定友元函数注册为命名空间级 `FunctionDecl`；Extractor 产 `FRIEND` 关系 |
 
 ## 8. 与 SPI 契约的对应
 
 | SPI | C/C++ 实现 | 说明 |
 |---|---|---|
 | Parser / ParserFactory | `x/cpp/cpp_parser.go` | 按扩展名选 grammar（`languageForPath`） |
-| Collector | `x/cpp/collector/` | 五步收集 + 条件栈 + 匿名 struct 承载 + 元数据增强 |
+| Collector | `x/cpp/collector/` | Step 0–6 收集 + 条件栈 + 匿名 struct 承载 + 元数据增强 + 展示字段填充 |
 | Binder | `x/cpp/binder/` | raw 类型 → QN，typedef 别名链展开 |
 | Extractor | `x/cpp/extractor/` | 结构 + 动作 + Capture 派生 |
 | Linker | `x/cpp/linker/` | Contain 拓扑 + ImplLink 签名配对 |
@@ -397,15 +484,15 @@ type expr struct {
 | SymbolResolver | `x/cpp/symbol_resolver/` | 两段式：段 1 `normalize` 归一化为 `expr` + 段 2 `resolveExpr` 作用域链/继承链查找 + 链式接收者类型传播 |
 | SymbolBuilder | `x/cpp/symbol_builder/` | QN 用 `::` 拼接 |
 | FileContext | `x/cpp/context/` | 内嵌 `core.BaseFileContext` + 实现 `cppctx.NamespaceAware`（`Namespaces()`）+ `ActionRoots()`（主树/原始树/回补树 + 死区） |
-| GlobalContext | `x/cpp/context/` | 内嵌 `core.BaseGlobalContext`；NAMESPACE 由 Collector 建元素；重载索引收 Function 族 |
+| GlobalContext | `x/cpp/context/` | 内嵌 `core.BaseGlobalContext`；NAMESPACE 由 Collector 建元素；全量索引 `QN\|Kind\|Path`、主索引裸 QN 定义优先、重载索引收 Function 族 |
 
 ## 9. 测试现状
 
 - 三层测试 + e2e 黄金回归集，全部位于 `x/cpp/test/`。
 - 测试文件按语言归属拆分：`*_base_test.go`（C/C++ 共享）、`*_c_test.go`（C 独有）、`*_cpp_test.go`（C++ 独有）；共享断言集中在 `assert_helper.go`。
-- e2e 基线：`x/cpp/testdata/e2e/baseline.golden.jsonl`（1499 元素 + 2849 关系，LevelBalanced）。
-- 元素覆盖（基线实测）：FILE 85 / NAMESPACE 46 / CLASS 27 / STRUCT 113 / ENUM 21 / ENUM_CONSTANT 45 / TYPE 30 / MACRO 48 / FIELD 169 / FUNCTION 142 / FUNCTION_DECL 45 / METHOD 83 / METHOD_DECL 91 / VARIABLE 492 / SCOPE_BLOCK 29 / LAMBDA 28。
-- 关系覆盖（基线实测）：CONTAIN 1823 / USE 360 / ASSIGN 171 / TYPE_ARG 126 / CALL 90 / IMPL_LINK 69 / PARAMETER 57 / RETURN 35 / IMPORT 35 / EXTEND 24 / CAPTURE 24 / CAST 14 / CREATE 7 / THROW 6。
+- e2e 基线：`x/cpp/testdata/e2e/baseline.golden.jsonl`（1511 元素 + 2814 关系，LevelBalanced）。
+- 元素覆盖（基线实测）：FILE 89 / NAMESPACE 48 / CLASS 28 / STRUCT 117 / ENUM 22 / ENUM_CONSTANT 49 / TYPE 33 / MACRO 48 / FIELD 174 / FUNCTION 148 / FUNCTION_DECL 46 / METHOD 83 / METHOD_DECL 91 / VARIABLE 469 / SCOPE_BLOCK 38 / LAMBDA 28。
+- 关系覆盖（基线实测）：CONTAIN 1799 / USE 364 / ASSIGN 185 / TYPE_ARG 104 / CALL 87 / IMPL_LINK 70 / PARAMETER 58 / RETURN 35 / IMPORT 35 / EXTEND 24 / CAPTURE 24 / CAST 14 / CREATE 7 / THROW 6 / FRIEND 2。
 - 基线（LevelBalanced）中 PARAMETER/RETURN 大幅减少，是因为当前样例的参数/返回类型多为基本类型（`int`/`void`），被外部符号降噪过滤；CONTAIN/USE/ASSIGN 等指向源码符号的关系不受影响。
 - 测试用例：
   | 测试 | 覆盖 |
@@ -424,15 +511,15 @@ type expr struct {
   | `TestCollectorCEdge` | 类型引用负例/块内重名/重载式命名/无名指针参数/嵌套结构体 |
   | `TestCollectorCpp` | namespace/class/继承/模板/纯虚/访问级别/enum class/类外定义 |
   | `TestCollectorCppBase` | 基准元素：16 种 ElementKind 冒烟（File/Namespace/Class/Struct/Enum/EnumConstant/Function/FunctionDecl/Method/MethodDecl/Field/Type/Variable/Macro/Lambda/ScopeBlock） |
-  | `TestCollectorCppNamespace` | 嵌套 namespace / C++17 `a::b` / inline / 匿名 `$anon` / alias / using |
-  | `TestCollectorCppDeclDef` | 同文件声明+定义、头文件原型、前向声明覆盖、类外定义、extern 声明+定义、只声明不定义 |
+  | `TestCollectorCppNamespace` | 嵌套 namespace / C++17 `a::b` / inline / 匿名 `$anon` / alias / using / 重开归一（`reopen_ns` 无 `$2`） |
+  | `TestCollectorCppDeclDef` | 同文件声明+定义、头文件原型、前向声明覆盖、类外定义、extern 声明+定义、只声明不定义、原型形参不下钻 |
   | `TestCollectorCppClass` | 访问级别、嵌套 class/struct/enum、friend、static/const/mutable 成员、final、抽象类 |
   | `TestCollectorCppCtorDtor` | 默认/带参/explicit/拷贝/移动/双参构造、析构、`= default`/`= delete`、委托构造、成员初始化列表 |
   | `TestCollectorCppOperator` | 算术/比较/赋值/下标/调用/自增自减/转换运算符/内存分配/逻辑位运算、成员与非成员 |
   | `TestCollectorCppTemplate` | 类/函数模板、可变参数、默认模板参数、全特化/偏特化（QN 剥离实参）、别名模板、concept |
   | `TestCollectorCppInherit` | 单/多继承、virtual 继承、菱形、private/protected 继承、override/final |
   | `TestCollectorCppEnum` | 普通 enum / enum class / 指定底层类型 / 前向声明 / 匿名 enum / 显式值 |
-  | `TestCollectorCppTypedefUsing` | typedef 基础/指针/引用/数组/函数指针/多声明器/链式、using、别名模板、匿名 struct 承载 |
+  | `TestCollectorCppTypedefUsing` | typedef 基础/指针/引用/数组/函数指针/多声明器/链式、using、别名模板、匿名 struct 承载、具名 tag 与 typedef 同名共存 |
   | `TestCollectorCppVariable` | 全局/static/const/constexpr/thread_local/extern/alignas、auto、引用/右值引用、指针、数组、结构化绑定、多声明器 |
   | `TestCollectorCppFunction` | 自由函数、可变参数、noexcept、constexpr、尾置返回、默认实参、重载组、static/inline、extern "C" |
   | `TestCollectorCppParam` | 值/指针/多级指针/左值引用/右值引用/const/数组/函数指针/默认值/可变参数/无名参数 |
@@ -455,6 +542,7 @@ type expr struct {
   | `TestExtractorCppActions` | 全形态：Call（自由/重载/命名空间限定/成员/指针成员/静态/const/operator()）、Create+构造器 CALL、Cast（C 风格 + 四种显式转换 + (void) 抑制）、Assign（初始化/赋值/字段/复合 + Mores）、Use（字段/变量）、Throw（new/T(...)/var 三形态） |
   | `TestExtractorCppCapture` | 值捕获/引用捕获/全捕获/嵌套 lambda/赋值推导/无捕获不产/lambda 内部变量不捕获/去重 |
   | `TestExtractorCppImplLink` | 1 头多源、签名、类外定义、static 不配对、只声明不配对、类内 inline 不配对 |
+  | `TestExtractorCppFriend` | `friend class` / `friend` 函数 → FRIEND 关系（宿主类 → 友元类型/函数） |
   | `TestResolverCall` | 自由函数/成员/指针成员/静态/命名空间限定调用 |
   | `TestResolverCreate` | `new` 表达式 + 构造器 CALL |
   | `TestResolverUse` / `TestResolverAssign` | 变量/字段/枚举常量读写 |
@@ -470,10 +558,17 @@ type expr struct {
   | `TestResolverCppExternal` | 外部类型方法归属（`std::string::size`）、模板变量不产依赖、基本类型 PRIMITIVE、外部类型 NamespaceQN |
   | `TestCollectorCppDisplayFields` | 展示层三字段：namespace 层级、嵌套类型 TypeQN、自由函数无宿主、跨文件类外定义、File 三字段空 |
   | `TestCollectorCppDisplayFieldsEdge` | 展示层三字段边界：三层 namespace / C++17 嵌套 / inline / 匿名 / 重开归一、三层嵌套类型、union/enum、模板嵌套、typedef 与匿名承载、局部类型（方法内/自由函数/块/lambda/局部套局部）、跨文件类外定义（有/无 namespace 块）、纯 C、`extern "C"`、运算符、`= default` |
-  | `TestCollectorCppDisplayFieldsInvariant` | 横切不变量（遍历全部 collector 样例 785 元素）：File 三字段空、NamespaceQN 必为真实 namespace、EnclosingQN == ParentQN（namespace 侧剥离 `$N`）、TypeQN 必为具名类型且是展示层 QN 的段边界前缀、TypeQN 不得是函数 QN |
+  | `TestCollectorCppDisplayFieldsInvariant` | 横切不变量（遍历全部 collector 样例 804 元素 / 35 文件）：File 三字段空、NamespaceQN 必为真实 namespace、EnclosingQN == ParentQN（namespace 侧剥离 `$N`）、TypeQN 必为具名类型（同 QN 跨 Kind 时按全部 Kind 判定）且是展示层 QN 的段边界前缀、TypeQN 不得是函数 QN |
+  | `TestCollectorCppCrossFileSameQN` | 跨文件同 QN+Kind 共存（`dup_files/a.cpp` 与 `b.cpp` 各定义 `main()`），全局索引按 Path 维度保留两者 |
   | `TestResolverCppLambdaVar` | lambda 变量调用、立即调用 lambda |
   | `TestResolverCppCast` | C 风格 + static/dynamic/const/reinterpret_cast、`(void)` 抑制 |
   | `TestResolverCppThrow` | throw new T / throw T(...) / throw var |
+  | `TestBinderCppConceptNotAlias` | concept 不进别名表、不产 `underlying_with_qn`；同名类型引用不被约束表达式污染 |
+
+- 包级单元测试（不依赖完整流水线）：
+  - `core/global_context_test.go`：`TestGlobalContextCrossFileSameQN`（跨文件同 QN+Kind 共存）、`TestGlobalContextSameFileSameQN`（同文件同键幂等）、`TestGlobalContextDeclDefSameFile`（声明/定义同键时定义覆盖）。
+  - `x/cpp/collector/normalize_test.go`：`TestNormalizeQualifiedCRLF`（剥 `\r`）、`TestNormalizeQualifiedLeadingGlobal`（剥前导 `::`）。
+  - `x/cpp/preproc/projector_test.go`：投影/宏归一化各形态（类型注解宏、返回类型宏、语句宏、测试宏、函数式宏作类型名、operator/尾随宏等）。
 
 ## 10. 测试命令
 

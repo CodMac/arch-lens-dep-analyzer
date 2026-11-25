@@ -26,6 +26,9 @@ const (
 	// Override 重写: 子类方法对父类/接口方法的具体实现或覆盖
 	Override DependencyType = "OVERRIDE"
 
+	// Friend 友元: C++ 类授予另一个类/函数的访问权限
+	Friend DependencyType = "FRIEND"
+
 	// --- 3. 类型绑定与元数据 (Typing & Metadata) ---
 
 	// Annotation 注解: 符号被特定注解修饰

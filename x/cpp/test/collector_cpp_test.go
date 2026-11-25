@@ -252,6 +252,13 @@ func TestCollectorCppClass(t *testing.T) {
 	// friend 声明不是成员：不产 Outer::friend_func
 	AssertNoDef(t, gc, "Outer::friend_func(Outer&)")
 	AssertDef(t, gc, "friend_func(Outer&)", model.Function)
+	// 友元函数声明注册为命名空间级 FunctionDecl（与定义成对）
+	if el := assertElemInFile(t, gc, "collector/cpp/class/cls.cpp", "friend_func(Outer&)", model.FunctionDecl); el == nil {
+		t.Errorf("friend function declaration should be collected as FunctionDecl")
+	}
+	// 友元目标记录在类元素 Mores 上
+	AssertMores(t, gc, "Outer", constants.ClassFriendTypes, []string{"FriendClass"})
+	AssertMores(t, gc, "Outer", constants.ClassFriendFunctions, []string{"friend_func(Outer&)"})
 }
 
 // =============================================================================
@@ -419,7 +426,10 @@ func TestCollectorCppTemplate(t *testing.T) {
 	AssertDef(t, gc, "BoxAlias", model.Type)
 	AssertMores(t, gc, "BoxAlias", constants.TypeUnderlying, "Box<T>")
 
-	// concept / requires
+	// concept / requires：concept 归 TYPE，约束表达式记 underlying，标记为定义
+	AssertDef(t, gc, "Small", model.Type)
+	AssertMores(t, gc, "Small", constants.TypeUnderlying, "sizeof(T) <= 4")
+	AssertMores(t, gc, "Small", constants.IsDeclaration, false)
 	AssertDef(t, gc, "constrained_func(T)", model.Function)
 	AssertMores(t, gc, "constrained_func(T)", constants.TemplateParams, "<Small T>")
 
@@ -507,6 +517,11 @@ func TestCollectorCppEnum(t *testing.T) {
 	// 同样不产空名 ENUM，常量挂当前容器。
 	AssertDef(t, gc, "ANON_TYPED_A", model.EnumConstant)
 	AssertDef(t, gc, "ANON_TYPED_B", model.EnumConstant)
+
+	// 全大写枚举名：不得被类型宏归一化误置空
+	AssertDef(t, gc, "COLOR", model.Enum)
+	AssertDef(t, gc, "COLOR::C_RED", model.EnumConstant)
+	AssertDef(t, gc, "COLOR::C_GREEN", model.EnumConstant)
 
 	// 显式值
 	AssertDef(t, gc, "Flags", model.Enum)
@@ -877,7 +892,9 @@ func TestCollectorCppScope(t *testing.T) {
 	AssertDef(t, gc, "scope_user(int)::n", model.Variable)
 	AssertDef(t, gc, "scope_user(int)::fn_level", model.Variable)
 	AssertDef(t, gc, "scope_user(int)::arr", model.Variable)
-	AssertDef(t, gc, "scope_user(int)::i", model.Variable)
+	// for 初始化变量只在该语句内可见，挂语句体块下
+	AssertDef(t, gc, "scope_user(int)::block$4::i", model.Variable)
+	AssertNoDef(t, gc, "scope_user(int)::i")
 
 	// 各类语句体各产一个 ScopeBlock，局部变量挂其下
 	cases := map[string]string{
@@ -907,6 +924,18 @@ func TestCollectorCppScope(t *testing.T) {
 	// 嵌套 block
 	AssertDef(t, gc, "scope_user(int)::block$11::block$1", model.ScopeBlock)
 	AssertDef(t, gc, "scope_user(int)::block$11::block$1::inner_block", model.Variable)
+
+	// 控制流声明作用域：catch 参数 / if 条件声明 / for 初始化变量挂语句体块下，
+	// 不同语句的同名变量互不干扰（各自块内计数从 1 开始）。
+	AssertDef(t, gc, "ctrl_scope(int)::block$1::x", model.Variable)
+	AssertDef(t, gc, "ctrl_scope(int)::block$3::x", model.Variable)
+	AssertNoDef(t, gc, "ctrl_scope(int)::x")
+	AssertDef(t, gc, "ctrl_scope(int)::block$5::i", model.Variable)
+	AssertDef(t, gc, "ctrl_scope(int)::block$6::i", model.Variable)
+	AssertNoDef(t, gc, "ctrl_scope(int)::i")
+	AssertDef(t, gc, "ctrl_scope(int)::block$8::q", model.Variable)
+	AssertDef(t, gc, "ctrl_scope(int)::block$9::q", model.Variable)
+	AssertNoDef(t, gc, "ctrl_scope(int)::q")
 
 	// 块内重名：不同作用域各自独立（QN 不同）
 	AssertDef(t, gc, "scope_user(int)::block$12::dup_name", model.Variable)

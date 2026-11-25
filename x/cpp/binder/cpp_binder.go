@@ -79,7 +79,10 @@ func (b *Binder) BindSymbols(gc core.GlobalContext) error {
 				mores[constants.FieldTypeWithQN] = b.resolveToQN(gc, fCtx, aliases, elem.QualifiedName, raw)
 			}
 
-			// 5. typedef/using 底层类型
+			// 5. typedef/using 底层类型（concept 的 underlying 是约束表达式，不是类型，跳过）
+			if isConcept(mores) {
+				continue
+			}
 			if raw, ok := mores[constants.TypeUnderlying].(string); ok && raw != "" {
 				mores[constants.TypeUnderlying+"_with_qn"] = b.resolveToQN(gc, fCtx, aliases, elem.QualifiedName, raw)
 			}
@@ -94,6 +97,10 @@ func (b *Binder) collectAliases(gc core.GlobalContext) map[string]string {
 	for _, def := range gc.Definitions() {
 		elem := def.Element
 		if elem == nil || elem.Kind != model.Type || elem.Extra == nil {
+			continue
+		}
+		// concept 的 underlying 是约束表达式，不是可展开的类型别名。
+		if isConcept(elem.Extra.Mores) {
 			continue
 		}
 		if raw, ok := elem.Extra.Mores[constants.TypeUnderlying].(string); ok && raw != "" {
@@ -235,6 +242,12 @@ func isAnonymousTypeText(s string) bool {
 		return strings.HasPrefix(rest, "{") || strings.HasPrefix(rest, ":")
 	}
 	return false
+}
+
+// isConcept 判断元素是否为 C++20 concept（其 underlying 是约束表达式）。
+func isConcept(mores map[string]any) bool {
+	v, ok := mores[constants.TypeIsConcept].(bool)
+	return ok && v
 }
 
 // isIdentifier 判断是否为合法 C/C++ 标识符。

@@ -44,6 +44,12 @@ enum : int {
     ANON_TYPED_B = 2
 };
 
+/* 全大写枚举名：不得被类型宏归一化误置空 */
+enum class COLOR {
+    C_RED,
+    C_GREEN
+};
+
 /* 显式值 */
 enum Flags {
     F_NONE = 0,

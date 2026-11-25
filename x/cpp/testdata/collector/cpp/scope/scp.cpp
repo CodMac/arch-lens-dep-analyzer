@@ -84,3 +84,15 @@ void scope_user(int n) {
         LE_A
     };
 }
+
+/* 控制流声明作用域：catch 参数 / if 条件声明 / for 初始化变量只在该语句内可见 */
+void ctrl_scope(int n) {
+    if (int x = n; x) { int a = x; } else { int b = 0; }
+    if (int x = n; x) { int c = x; } else { int d = 0; }
+
+    for (int i = 0; i < n; ++i) { int e = i; }
+    for (int i = 0; i < n; ++i) { int f = i; }
+
+    try { int g = 0; } catch (int q) { int h = q; }
+    catch (int q) { int k = q; }
+}

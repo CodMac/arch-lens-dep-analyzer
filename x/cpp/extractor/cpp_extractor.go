@@ -187,6 +187,11 @@ func (e *Extractor) extractStructural(fCtx core.FileContext, gc core.GlobalConte
 			}
 		}
 
+		// 友元（C++ friend 声明）
+		if elem.Kind == model.Class || elem.Kind == model.Struct {
+			rels = append(rels, e.extractFriendRels(fCtx, gc, elem)...)
+		}
+
 		// 函数签名（Parameter/Return）
 		if isFunctionKind(elem.Kind) {
 			rels = append(rels, e.extractSignatureRels(fCtx, gc, elem)...)
@@ -196,6 +201,63 @@ func (e *Extractor) extractStructural(fCtx core.FileContext, gc core.GlobalConte
 		rels = append(rels, e.extractTypeArgRels(fCtx, gc, elem)...)
 	}
 	return rels
+}
+
+// extractFriendRels 提取 C++ 友元关系：类 → 友元类型 / 友元函数。
+func (e *Extractor) extractFriendRels(fCtx core.FileContext, gc core.GlobalContext, elem *model.CodeElement) []*model.DependencyRelation {
+	if elem.Extra == nil {
+		return nil
+	}
+	mores := elem.Extra.Mores
+	var rels []*model.DependencyRelation
+
+	if types, ok := mores[constants.ClassFriendTypes].([]string); ok {
+		for _, t := range types {
+			target := e.resolver.ResolveType(gc, fCtx, t, model.Class)
+			if target == nil {
+				continue
+			}
+			rels = append(rels, &model.DependencyRelation{
+				Type: model.Friend, Source: elem, Target: target,
+				Mores: map[string]interface{}{constants.RelRawText: t},
+			})
+		}
+	}
+	if funcs, ok := mores[constants.ClassFriendFunctions].([]string); ok {
+		for _, f := range funcs {
+			target := e.resolveFriendFunc(gc, fCtx, elem.QualifiedName, f)
+			if target == nil {
+				continue
+			}
+			rels = append(rels, &model.DependencyRelation{
+				Type: model.Friend, Source: elem, Target: target,
+				Mores: map[string]interface{}{constants.RelRawText: f},
+			})
+		}
+	}
+	return rels
+}
+
+// resolveFriendFunc 按 "名(签名)" 在类所在命名空间及上层作用域查找友元函数。
+func (e *Extractor) resolveFriendFunc(gc core.GlobalContext, fCtx core.FileContext, classQN, text string) *model.CodeElement {
+	for scope := helper.PkgOf(classQN); ; {
+		if entry, ok := gc.FindByQualifiedName(helper.BuildQN(scope, text)); ok {
+			return entry.Element
+		}
+		next := helper.PkgOf(scope)
+		if next == scope {
+			break
+		}
+		scope = next
+	}
+	if entries, ok := fCtx.FindByShortName(text); ok {
+		for _, entry := range entries {
+			if isFunctionKind(entry.Element.Kind) {
+				return entry.Element
+			}
+		}
+	}
+	return nil
 }
 
 // extractSignatureRels 提取 Parameter / Return 关系。

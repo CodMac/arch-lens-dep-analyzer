@@ -205,6 +205,22 @@ func TestTypeMacroMultiline(t *testing.T) {
 	}
 }
 
+// TestEnumClassAllCapsName `enum class E {` 不得被 typeMacroAfterRe 误判为
+// 「类型名 + 宏」：group2 是 class 关键字，group4 是枚举名，两者都必须保留。
+func TestEnumClassAllCapsName(t *testing.T) {
+	src := []byte("enum class E { A };\nenum struct COLOR : int { RED };\n")
+	out := NormalizeMacros(src)
+	if len(out) != len(src) {
+		t.Fatalf("length changed: %d -> %d", len(src), len(out))
+	}
+	if !bytes.Contains(out, []byte("enum class E {")) {
+		t.Errorf("enum class E must remain: %q", out)
+	}
+	if !bytes.Contains(out, []byte("enum struct COLOR : int {")) {
+		t.Errorf("enum struct COLOR must remain: %q", out)
+	}
+}
+
 // TestStatementMacro 独占一行的对象式宏调用应被置空，避免 C 声明歧义吞并后续代码。
 func TestStatementMacro(t *testing.T) {
 	src := []byte("#define EXPECT_BEGIN \\\n    if (x) {\n" +

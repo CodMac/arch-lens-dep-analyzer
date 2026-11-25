@@ -703,6 +703,19 @@ func enclosingType(fc core.FileContext, node coreast.Node) *model.CodeElement {
 // scopeChain 返回节点的词法作用域 QN 链（最内层 → 最外层 → ""）。
 func (r *SymbolResolver) scopeChain(fc core.FileContext, node coreast.Node) []string {
 	var chain []string
+	// 控制流语句的条件/初始化/更新表达式不在语句体块内，但语句内声明的变量
+	// （if/while/switch 条件声明、for 初始化变量）挂在语句体块下。此处把该块
+	// 显式加入作用域链，避免退化为文件短名而误命中同名变量。
+	for anc := node.Parent(); anc != nil; anc = anc.Parent() {
+		if !isControlFlowKind(anc.Kind()) || !nodeInStatementHead(node, anc) {
+			continue
+		}
+		if body := primaryBodyNode(anc); body != nil {
+			if qn := blockQNByRange(fc, body); qn != "" {
+				chain = append(chain, qn)
+			}
+		}
+	}
 	owner := enclosingScope(fc, node)
 	if owner != nil {
 		chain = append(chain, owner.QualifiedName)
@@ -956,4 +969,62 @@ func isFunctionKind(k model.ElementKind) bool {
 
 func isDeclKind(k model.ElementKind) bool {
 	return k == model.FunctionDecl || k == model.MethodDecl
+}
+
+// isControlFlowKind 判定语句是否引入控制流声明作用域（与 Collector 保持一致）。
+func isControlFlowKind(kind string) bool {
+	switch kind {
+	case "if_statement", "for_statement", "while_statement", "do_statement",
+		"switch_statement", "try_statement", "catch_clause", "for_range_loop":
+		return true
+	}
+	return false
+}
+
+// primaryBodyNode 返回语句的主执行体节点（if 取 consequence，其余取 body）。
+func primaryBodyNode(node coreast.Node) coreast.Node {
+	if node.Kind() == "if_statement" {
+		if b := node.ChildByFieldName("consequence"); b != nil {
+			return b
+		}
+	} else if b := node.ChildByFieldName("body"); b != nil {
+		return b
+	}
+	for i := 0; i < node.NamedChildCount(); i++ {
+		if ch := node.NamedChild(i); ch != nil && ch.Kind() == "compound_statement" {
+			return ch
+		}
+	}
+	return nil
+}
+
+// nodeInStatementHead 判定 node 是否位于语句的「头部」（条件/初始化/更新/参数），
+// 而非主执行体、else 体或 catch 体。只有头部节点才需要补该语句的声明作用域块。
+func nodeInStatementHead(node, stmt coreast.Node) bool {
+	body := primaryBodyNode(stmt)
+	for n := node; n != nil && !n.Equal(stmt); n = n.Parent() {
+		if body != nil && n.Equal(body) {
+			return false
+		}
+		switch n.Kind() {
+		case "else_clause", "catch_clause":
+			return false
+		}
+	}
+	return true
+}
+
+// blockQNByRange 按字节区间查找 body 对应的 ScopeBlock QN。
+// 用区间而非节点身份，兼容主树/原始树/回补树的不同节点实例。
+func blockQNByRange(fc core.FileContext, body coreast.Node) string {
+	s, e := body.StartByte(), body.EndByte()
+	for _, entry := range fc.Definitions() {
+		if entry.Element.Kind != model.ScopeBlock || entry.Node == nil {
+			continue
+		}
+		if entry.Node.StartByte() == s && entry.Node.EndByte() == e {
+			return entry.Element.QualifiedName
+		}
+	}
+	return ""
 }

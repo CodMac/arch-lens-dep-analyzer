@@ -62,12 +62,18 @@ const (
 	ClassSuperClass = "cpp.class.superclass"
 	// ClassIsDeclaration 是否为类的前向声明 -> bool
 	ClassIsDeclaration = "cpp.class.is_declaration"
+	// ClassFriendTypes 友元类型声明（friend class X;）的类型文本列表 -> []string
+	ClassFriendTypes = "cpp.class.friend_types"
+	// ClassFriendFunctions 友元函数声明（friend void f(int);）的 "名(签名)" 列表 -> []string
+	ClassFriendFunctions = "cpp.class.friend_functions"
 
 	// EnumIsScoped 是否为 C++ enum class -> bool
 	EnumIsScoped = "cpp.enum.is_scoped"
 
 	// TypeUnderlying typedef/using 别名指向的底层类型文本 -> string
 	TypeUnderlying = "cpp.type.underlying"
+	// TypeIsConcept 是否为 C++20 concept（underlying 是约束表达式而非类型，不参与别名展开）-> bool
+	TypeIsConcept = "cpp.type.is_concept"
 
 	// MacroName 宏名 -> string
 	MacroName = "cpp.macro.name"

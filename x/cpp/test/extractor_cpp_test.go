@@ -401,3 +401,22 @@ func TestExtractorContainNamespace(t *testing.T) {
 			r.Target.QualifiedName == "app::Box"
 	})
 }
+
+// TestExtractorCppFriend 友元关系：类 → 友元类型 / 友元函数。
+func TestExtractorCppFriend(t *testing.T) {
+	paths := ResolveTree(t, "collector/cpp/class")
+	ec := RunPipeline(t, "x/cpp/testdata", paths, core.LevelRaw)
+
+	// friend class FriendClass;
+	FindRel(t, ec.Relations, func(r *model.DependencyRelation) bool {
+		return r.Type == model.Friend &&
+			r.Source.QualifiedName == "Outer" &&
+			r.Target.QualifiedName == "FriendClass"
+	})
+	// friend void friend_func(Outer&);（目标为命名空间级函数）
+	FindRel(t, ec.Relations, func(r *model.DependencyRelation) bool {
+		return r.Type == model.Friend &&
+			r.Source.QualifiedName == "Outer" &&
+			r.Target.QualifiedName == "friend_func(Outer&)"
+	})
+}

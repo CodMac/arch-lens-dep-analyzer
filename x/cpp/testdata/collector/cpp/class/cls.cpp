@@ -1,5 +1,10 @@
 /* 类族：访问级别、嵌套类型、friend、static/const/mutable、final、抽象类。 */
 
+class FriendClass {
+public:
+    int fc;
+};
+
 class Abstract {
 public:
     virtual void pure() = 0;
@@ -40,6 +45,7 @@ public:
     void pub_method();
 
     friend void friend_func(Outer&);
+    friend class FriendClass;
 
 protected:
     int prot_field;

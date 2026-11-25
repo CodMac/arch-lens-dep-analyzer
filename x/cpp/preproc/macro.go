@@ -48,6 +48,12 @@ func normalizeTypeMacros(src []byte) ([]byte, []MacroAnn) {
 	})
 	out = typeMacroAfterRe.ReplaceAllFunc(out, func(m []byte) []byte {
 		sub := typeMacroAfterRe.FindSubmatch(m)
+		// `enum class E {` / `enum struct COLOR {` 会被该正则误判为
+		// 「类型名 + 宏」：group2 是 `class`/`struct` 关键字，group4 才是枚举名。
+		// 关键字不是类型名，枚举名也不是宏，必须跳过，否则全大写枚举名被置空。
+		if isTypeKeyword(string(sub[2])) {
+			return m
+		}
 		anns = append(anns, MacroAnn{Macro: string(sub[4]), Type: string(sub[2])})
 		return rebuildWithBlanked(m, sub, 4)
 	})
@@ -587,6 +593,15 @@ func blankRange(b []byte, from, to int) {
 
 // isMacroLikeName 判定标识符是否形如宏名：全大写/数字/下划线，且含至少一个下划线。
 // 用于识别定义在其它头文件、本文件看不到 #define 的注解宏。
+// isTypeKeyword 判断是否为类型声明关键字（enum class / enum struct 的中间关键字）。
+func isTypeKeyword(s string) bool {
+	switch s {
+	case "class", "struct", "union", "enum":
+		return true
+	}
+	return false
+}
+
 func isMacroLikeName(s string) bool {
 	if len(s) < 3 || !bytes.ContainsRune([]byte(s), '_') {
 		return false
