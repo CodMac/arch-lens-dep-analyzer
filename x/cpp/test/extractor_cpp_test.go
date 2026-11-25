@@ -629,3 +629,24 @@ func TestExtractorCppImplLinkSignature(t *testing.T) {
 		t.Errorf("sig_ov ImplLink count = %d, want 3", n)
 	}
 }
+
+// TestExtractorCppImplLinkMultiDecl 同一函数在多个头文件声明时全部建 ImplLink。
+func TestExtractorCppImplLinkMultiDecl(t *testing.T) {
+	paths := ResolveTree(t, "linker/cpp/impl_multi_decl")
+	ec := RunPipeline(t, "x/cpp/testdata", paths, core.LevelRaw)
+
+	targets := map[string]bool{}
+	for _, r := range ec.Relations {
+		if r.Type == model.ImplLink && r.Source.QualifiedName == "md::shared(int)" {
+			targets[r.Target.Path] = true
+		}
+	}
+	for _, want := range []string{
+		"linker/cpp/impl_multi_decl/ma.h",
+		"linker/cpp/impl_multi_decl/mb.h",
+	} {
+		if !targets[want] {
+			t.Errorf("ImplLink target %s missing, got %v", want, targets)
+		}
+	}
+}

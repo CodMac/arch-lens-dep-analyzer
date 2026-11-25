@@ -133,17 +133,19 @@ func (l *Linker) linkImpl(gc core.GlobalContext, relMap map[string]*model.Depend
 		if len(info.defs) == 0 || len(info.decls) == 0 {
 			continue
 		}
-		decl := info.decls[0]
+		// 同一函数可能在多个头文件重复声明，全部建链，避免只连第一个声明而丢失其余。
 		for _, def := range info.defs {
-			key := string(model.ImplLink) + ":" + def.QualifiedName + "->" + decl.QualifiedName
-			if _, exists := relMap[key]; exists {
-				continue
-			}
-			relMap[key] = &model.DependencyRelation{
-				Type:   model.ImplLink,
-				Source: def,
-				Target: decl,
-				Mores:  map[string]interface{}{constants.RelImplLinkSignature: sig},
+			for _, decl := range info.decls {
+				key := string(model.ImplLink) + ":" + def.QualifiedName + "->" + decl.QualifiedName + "@" + decl.Path
+				if _, exists := relMap[key]; exists {
+					continue
+				}
+				relMap[key] = &model.DependencyRelation{
+					Type:   model.ImplLink,
+					Source: def,
+					Target: decl,
+					Mores:  map[string]interface{}{constants.RelImplLinkSignature: sig},
+				}
 			}
 		}
 	}
