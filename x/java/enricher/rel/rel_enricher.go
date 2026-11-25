@@ -4,9 +4,9 @@
 package rel
 
 import (
-	"github.com/CodMac/arch-lens-dep-analyer/core"
-	coreast "github.com/CodMac/arch-lens-dep-analyer/core/ast"
-	"github.com/CodMac/arch-lens-dep-analyer/model"
+	"github.com/CodMac/arch-lens-dep-analyzer/core"
+	coreast "github.com/CodMac/arch-lens-dep-analyzer/core/ast"
+	"github.com/CodMac/arch-lens-dep-analyzer/model"
 )
 
 // IEnricher 是单个关系类型的元数据增强契约。

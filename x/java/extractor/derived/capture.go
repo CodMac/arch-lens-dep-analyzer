@@ -1,8 +1,8 @@
 package derived
 
 import (
-	"github.com/CodMac/arch-lens-dep-analyer/model"
-	"github.com/CodMac/arch-lens-dep-analyer/x/java/constants"
+	"github.com/CodMac/arch-lens-dep-analyzer/model"
+	"github.com/CodMac/arch-lens-dep-analyzer/x/java/constants"
 )
 
 // CaptureExtractor 从 USE/ASSIGN 关系推导 CAPTURE 关系（跨作用域变量捕获）。

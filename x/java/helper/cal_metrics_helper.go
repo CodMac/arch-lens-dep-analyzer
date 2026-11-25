@@ -4,7 +4,7 @@ import (
 	"regexp"
 	"strings"
 
-	coreast "github.com/CodMac/arch-lens-dep-analyer/core/ast"
+	coreast "github.com/CodMac/arch-lens-dep-analyzer/core/ast"
 )
 
 // =============================================================================

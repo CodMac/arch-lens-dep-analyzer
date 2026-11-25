@@ -3,9 +3,9 @@ package derived
 import (
 	"strings"
 
-	"github.com/CodMac/arch-lens-dep-analyer/model"
-	"github.com/CodMac/arch-lens-dep-analyer/x/java/constants"
-	"github.com/CodMac/arch-lens-dep-analyer/x/java/helper"
+	"github.com/CodMac/arch-lens-dep-analyzer/model"
+	"github.com/CodMac/arch-lens-dep-analyzer/x/java/constants"
+	"github.com/CodMac/arch-lens-dep-analyzer/x/java/helper"
 )
 
 // TypeArgExtractor 派生 TypeArg（泛型实参/边界）关系。

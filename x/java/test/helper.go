@@ -11,10 +11,10 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/CodMac/arch-lens-dep-analyer/core"
-	"github.com/CodMac/arch-lens-dep-analyer/engine"
-	"github.com/CodMac/arch-lens-dep-analyer/model"
-	_ "github.com/CodMac/arch-lens-dep-analyer/x/java" // 注册 Java 实现
+	"github.com/CodMac/arch-lens-dep-analyzer/core"
+	"github.com/CodMac/arch-lens-dep-analyzer/engine"
+	"github.com/CodMac/arch-lens-dep-analyzer/model"
+	_ "github.com/CodMac/arch-lens-dep-analyzer/x/java" // 注册 Java 实现
 )
 
 // TestDataDir 指向黄金回归样例目录（仓库根下的相对路径）。

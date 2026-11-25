@@ -3,10 +3,10 @@ package rel
 import (
 	"strings"
 
-	"github.com/CodMac/arch-lens-dep-analyer/core"
-	"github.com/CodMac/arch-lens-dep-analyer/model"
-	"github.com/CodMac/arch-lens-dep-analyer/x/java/constants"
-	"github.com/CodMac/arch-lens-dep-analyer/x/java/helper"
+	"github.com/CodMac/arch-lens-dep-analyzer/core"
+	"github.com/CodMac/arch-lens-dep-analyzer/model"
+	"github.com/CodMac/arch-lens-dep-analyzer/x/java/constants"
+	"github.com/CodMac/arch-lens-dep-analyzer/x/java/helper"
 )
 
 // CallEnricher 为调用关系（Call）提取 receiver/静态性/链式等元数据。

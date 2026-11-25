@@ -3,9 +3,9 @@ package rel
 import (
 	"strings"
 
-	"github.com/CodMac/arch-lens-dep-analyer/core"
-	"github.com/CodMac/arch-lens-dep-analyer/model"
-	"github.com/CodMac/arch-lens-dep-analyer/x/java/constants"
+	"github.com/CodMac/arch-lens-dep-analyzer/core"
+	"github.com/CodMac/arch-lens-dep-analyzer/model"
+	"github.com/CodMac/arch-lens-dep-analyzer/x/java/constants"
 )
 
 // AnnotationEnricher 为注解关系（Annotation）映射注解目标并修正 Target 名。

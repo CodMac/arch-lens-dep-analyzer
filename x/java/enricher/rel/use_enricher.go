@@ -3,10 +3,10 @@ package rel
 import (
 	"strings"
 
-	"github.com/CodMac/arch-lens-dep-analyer/core"
-	"github.com/CodMac/arch-lens-dep-analyer/model"
-	"github.com/CodMac/arch-lens-dep-analyer/x/java/constants"
-	"github.com/CodMac/arch-lens-dep-analyer/x/java/helper"
+	"github.com/CodMac/arch-lens-dep-analyzer/core"
+	"github.com/CodMac/arch-lens-dep-analyzer/model"
+	"github.com/CodMac/arch-lens-dep-analyzer/x/java/constants"
+	"github.com/CodMac/arch-lens-dep-analyzer/x/java/helper"
 )
 
 // UseEnricher 为使用关系（Use）提取接收者/上下文/跨作用域捕获等元数据。

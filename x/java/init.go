@@ -4,15 +4,15 @@
 package java
 
 import (
-	"github.com/CodMac/arch-lens-dep-analyer/core"
-	"github.com/CodMac/arch-lens-dep-analyer/x/java/binder"
-	"github.com/CodMac/arch-lens-dep-analyer/x/java/collector"
-	javactx "github.com/CodMac/arch-lens-dep-analyer/x/java/context"
-	"github.com/CodMac/arch-lens-dep-analyer/x/java/extractor"
-	"github.com/CodMac/arch-lens-dep-analyer/x/java/linker"
-	"github.com/CodMac/arch-lens-dep-analyer/x/java/noise_filter"
-	"github.com/CodMac/arch-lens-dep-analyer/x/java/symbol_builder"
-	"github.com/CodMac/arch-lens-dep-analyer/x/java/symbol_resolver"
+	"github.com/CodMac/arch-lens-dep-analyzer/core"
+	"github.com/CodMac/arch-lens-dep-analyzer/x/java/binder"
+	"github.com/CodMac/arch-lens-dep-analyzer/x/java/collector"
+	javactx "github.com/CodMac/arch-lens-dep-analyzer/x/java/context"
+	"github.com/CodMac/arch-lens-dep-analyzer/x/java/extractor"
+	"github.com/CodMac/arch-lens-dep-analyzer/x/java/linker"
+	"github.com/CodMac/arch-lens-dep-analyzer/x/java/noise_filter"
+	"github.com/CodMac/arch-lens-dep-analyzer/x/java/symbol_builder"
+	"github.com/CodMac/arch-lens-dep-analyzer/x/java/symbol_resolver"
 )
 
 func init() {

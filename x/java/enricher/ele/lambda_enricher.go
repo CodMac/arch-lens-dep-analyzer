@@ -3,11 +3,11 @@ package ele
 import (
 	"fmt"
 
-	"github.com/CodMac/arch-lens-dep-analyer/core"
-	coreast "github.com/CodMac/arch-lens-dep-analyer/core/ast"
-	"github.com/CodMac/arch-lens-dep-analyer/model"
-	"github.com/CodMac/arch-lens-dep-analyer/x/java/constants"
-	"github.com/CodMac/arch-lens-dep-analyer/x/java/helper"
+	"github.com/CodMac/arch-lens-dep-analyzer/core"
+	coreast "github.com/CodMac/arch-lens-dep-analyzer/core/ast"
+	"github.com/CodMac/arch-lens-dep-analyzer/model"
+	"github.com/CodMac/arch-lens-dep-analyzer/x/java/constants"
+	"github.com/CodMac/arch-lens-dep-analyzer/x/java/helper"
 )
 
 // LambdaEnricher 为 Lambda 表达式生成参数/主体形态与签名。

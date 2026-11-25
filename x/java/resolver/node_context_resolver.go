@@ -3,8 +3,8 @@ package resolver
 import (
 	"strings"
 
-	coreast "github.com/CodMac/arch-lens-dep-analyer/core/ast"
-	"github.com/CodMac/arch-lens-dep-analyer/model"
+	coreast "github.com/CodMac/arch-lens-dep-analyzer/core/ast"
+	"github.com/CodMac/arch-lens-dep-analyzer/model"
 )
 
 // NodeContextResolver 将「关系类型 + 动作节点」统一为双轨 ContextResult{ExpressNode, ContextNode}。

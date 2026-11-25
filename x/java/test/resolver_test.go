@@ -15,9 +15,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/CodMac/arch-lens-dep-analyer/core"
-	coreast "github.com/CodMac/arch-lens-dep-analyer/core/ast"
-	"github.com/CodMac/arch-lens-dep-analyer/model"
+	"github.com/CodMac/arch-lens-dep-analyzer/core"
+	coreast "github.com/CodMac/arch-lens-dep-analyzer/core/ast"
+	"github.com/CodMac/arch-lens-dep-analyzer/model"
 )
 
 // walkNodes 深度优先遍历 AST，对每个节点调用 visit。

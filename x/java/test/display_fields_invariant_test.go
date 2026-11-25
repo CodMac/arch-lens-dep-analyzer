@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/CodMac/arch-lens-dep-analyer/core"
-	"github.com/CodMac/arch-lens-dep-analyer/model"
-	"github.com/CodMac/arch-lens-dep-analyer/x/java/constants"
+	"github.com/CodMac/arch-lens-dep-analyzer/core"
+	"github.com/CodMac/arch-lens-dep-analyzer/model"
+	"github.com/CodMac/arch-lens-dep-analyzer/x/java/constants"
 )
 
 // TestCollectorDisplayFieldsInvariant 对全部 collector 样例断言展示层三字段的通用不变量。

@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/CodMac/arch-lens-dep-analyer/core"
-	coreast "github.com/CodMac/arch-lens-dep-analyer/core/ast"
-	javast "github.com/CodMac/arch-lens-dep-analyer/x/java/ast"
+	"github.com/CodMac/arch-lens-dep-analyzer/core"
+	coreast "github.com/CodMac/arch-lens-dep-analyzer/core/ast"
+	javast "github.com/CodMac/arch-lens-dep-analyzer/x/java/ast"
 	sitter "github.com/tree-sitter/go-tree-sitter"
 	treeSitterJava "github.com/tree-sitter/tree-sitter-java/bindings/go"
 )

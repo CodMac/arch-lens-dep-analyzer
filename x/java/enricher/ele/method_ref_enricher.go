@@ -1,11 +1,11 @@
 package ele
 
 import (
-	"github.com/CodMac/arch-lens-dep-analyer/core"
-	coreast "github.com/CodMac/arch-lens-dep-analyer/core/ast"
-	"github.com/CodMac/arch-lens-dep-analyer/model"
-	"github.com/CodMac/arch-lens-dep-analyer/x/java/constants"
-	"github.com/CodMac/arch-lens-dep-analyer/x/java/helper"
+	"github.com/CodMac/arch-lens-dep-analyzer/core"
+	coreast "github.com/CodMac/arch-lens-dep-analyzer/core/ast"
+	"github.com/CodMac/arch-lens-dep-analyzer/model"
+	"github.com/CodMac/arch-lens-dep-analyzer/x/java/constants"
+	"github.com/CodMac/arch-lens-dep-analyzer/x/java/helper"
 )
 
 // MethodRefEnricher 为方法引用 (如 System.out::println) 生成接收者/目标元数据。

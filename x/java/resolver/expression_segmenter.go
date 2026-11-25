@@ -3,8 +3,8 @@ package resolver
 import (
 	"strings"
 
-	coreast "github.com/CodMac/arch-lens-dep-analyer/core/ast"
-	"github.com/CodMac/arch-lens-dep-analyer/model"
+	coreast "github.com/CodMac/arch-lens-dep-analyzer/core/ast"
+	"github.com/CodMac/arch-lens-dep-analyzer/model"
 )
 
 // ExpressionSegmenter 将物理表达式树拉平为 Head + Segments 符号链。

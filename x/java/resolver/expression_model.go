@@ -3,7 +3,7 @@
 package resolver
 
 import (
-	coreast "github.com/CodMac/arch-lens-dep-analyer/core/ast"
+	coreast "github.com/CodMac/arch-lens-dep-analyzer/core/ast"
 )
 
 // ExpressionHeadType 表示拉平链的头部类型。

@@ -4,8 +4,8 @@
 package derived
 
 import (
-	"github.com/CodMac/arch-lens-dep-analyer/core"
-	"github.com/CodMac/arch-lens-dep-analyer/model"
+	"github.com/CodMac/arch-lens-dep-analyzer/core"
+	"github.com/CodMac/arch-lens-dep-analyzer/model"
 )
 
 // DerivedExtractor 派生关系提取器：从已提取的关系或元素元数据推导新关系。
