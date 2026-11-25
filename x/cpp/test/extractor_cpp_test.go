@@ -551,3 +551,16 @@ func TestExtractorCppStackCtorCall(t *testing.T) {
 			r.Target.QualifiedName == "Ctor::Ctor(int,int)"
 	})
 }
+
+// TestExtractorCppDesignatedInit 指定初始化 P p{.x = 1} 产字段 ASSIGN。
+func TestExtractorCppDesignatedInit(t *testing.T) {
+	paths := ResolvePaths(t, "extractor/cpp/designated_init", "*.cpp")
+	_, rels := RunExtraction(t, "x/cpp/testdata", paths)
+
+	for _, field := range []string{"DiPoint::x", "DiPoint::y"} {
+		FindRel(t, rels, func(r *model.DependencyRelation) bool {
+			return r.Type == model.Assign && r.Source.QualifiedName == "di_fn()" &&
+				r.Target.QualifiedName == field
+		})
+	}
+}

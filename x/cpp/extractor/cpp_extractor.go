@@ -490,6 +490,8 @@ func (ac *actionCtx) walk(node coreast.Node) {
 		ac.handleThrow(node)
 	case "field_initializer":
 		ac.handleFieldInitializer(node)
+	case "initializer_pair":
+		ac.handleDesignatedInit(node)
 	case "identifier":
 		ac.handleUse(node)
 	case "field_expression", "qualified_identifier":
@@ -825,6 +827,59 @@ func (ac *actionCtx) handleFieldInitializer(node coreast.Node) {
 		constants.RelAstKind:             "field_initializer",
 		constants.RelAssignIsInitializer: true,
 	})
+}
+
+// handleDesignatedInit 处理指定初始化（P p{.x = 1}）的字段赋值。
+// initializer_pair 的 field_designator 指明目标字段，语义为对成员字段的赋值。
+func (ac *actionCtx) handleDesignatedInit(node coreast.Node) {
+	designator := node.NamedChild(0)
+	if designator == nil || designator.Kind() != "field_designator" {
+		return
+	}
+	fieldName := ""
+	for i := 0; i < designator.NamedChildCount(); i++ {
+		if c := designator.NamedChild(i); c != nil && c.Kind() == "field_identifier" {
+			fieldName = c.Utf8Text(*ac.fCtx.SourceBytes())
+			break
+		}
+	}
+	if fieldName == "" {
+		return
+	}
+	typ := ac.declaredTypeOfInit(node)
+	if typ == nil {
+		return
+	}
+	target, ok := ac.gc.FindByQualifiedName(typ.QualifiedName + "::" + fieldName)
+	if !ok || target.Element.Kind != model.Field {
+		return
+	}
+	source := ac.sourceOf(node)
+	ac.add(model.Assign, source, target.Element, designator, map[string]interface{}{
+		constants.RelRawText:             helper.GetNodeContent(designator, *ac.fCtx.SourceBytes()),
+		constants.RelAstKind:             "initializer_pair",
+		constants.RelAssignIsInitializer: true,
+	})
+}
+
+// declaredTypeOfInit 从 initializer_pair 向上找到所属声明并解析其类型。
+func (ac *actionCtx) declaredTypeOfInit(node coreast.Node) *model.CodeElement {
+	cur := node.Parent()
+	for cur != nil && cur.Kind() != "init_declarator" {
+		cur = cur.Parent()
+	}
+	if cur == nil {
+		return nil
+	}
+	decl := cur.Parent()
+	if decl == nil {
+		return nil
+	}
+	typeNode := decl.ChildByFieldName("type")
+	if typeNode == nil {
+		return nil
+	}
+	return ac.resolver.ResolveType(ac.gc, ac.fCtx, helper.GetNodeContent(typeNode, *ac.fCtx.SourceBytes()), model.Class)
 }
 
 // handleUse 处理标识符使用（排除定义点/调用名/字段名/类型位置）。
