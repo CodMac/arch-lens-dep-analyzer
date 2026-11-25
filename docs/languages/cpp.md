@@ -349,6 +349,7 @@ type expr struct {
 | B5 | **原始树有 ERROR 的文件降级** | 原始树含 `ERROR` 时无法作为全分支树，退回逐分支投影；嵌套组合仍可能漏 | caffe 14 个、protobuf 35 个文件受影响（实测） | 已知代价 |
 | B6 | **多遍解析成本** | 原始树有 ERROR 的文件仍需解析 N+1 遍 | 极端头文件（如 cpp-httplib 单文件 23 分支）解析耗时线性放大；raw 无 ERROR 时已跳过 | 已知代价，暂不优化 |
 | B7 | **`$N` 元素增量** | 原始树补齐多分支同名符号时产生 `$N` 变体（实测 caffe +16、cpp-httplib +2，其余项目 0） | QN 集合相对单树方案有增量；属真实多分支定义，语义正确 | 已接受 |
+| B8 | **字符串实参测试宏** | 形如 doctest `TEST_CASE("...") { ... }` 的宏体仍为文件级块，内部 lambda/局部变量无容器 | 改写为函数需从字符串实参生成函数名，但 Collector 按 AST 字节区间从**原始源码**取文本，生成名无法与原始字节对齐；仅 `TEST`/`TEST_F`/`TEST_P` 等「首参为标识符」的宏可安全改写 | 已知限制 |
 
 ### 7.2 已修复的解析缺陷（2026-11-24 审计）
 
@@ -369,6 +370,16 @@ type expr struct {
 | **整行函数式宏调用破坏类体** | 类体内 `GTEST_DISABLE_MSC_WARNINGS_PUSH_(4180)` 未展开被当错误声明，类体大括号失配，后续成员被吞进类内（httplib `gtest-printers.h` 的 `PrintToString` 变 VARIABLE） | `preproc.blankStandaloneFunctionMacro`：整行只有一个函数式宏调用且**不带分号**时置空宏名与实参；带分号的语句宏保持原样以保留调用关系 |
 | **整行函数式宏破坏类体大括号** | 类体内的 `GTEST_DISABLE_MSC_WARNINGS_PUSH_(4180)` 未展开被当错误声明，类体大括号失配，后续成员被吞进类内（httplib `gtest-printers.h` 的 `PrintToString` 变成类成员变量） | `preproc.blankStandaloneFunctionMacro`：整行只有一个函数式宏调用且**不带分号**时置空宏名与实参（带分号的语句宏保留，其调用关系不受影响） |
 | **伪 namespace 悬空 CONTAIN** | 异常 QN 的父级 namespace 不存在 | Linker 仅当父级是真实 Namespace 元素时才建层级 CONTAIN |
+| **跨文件同 QN+Kind 丢元素** | 全局索引键为 `QN\|Kind`，`static` 函数、多个示例 `main`、合并副本（protobuf php/ruby upb）跨文件同名时只留第一个；cJSON 29 个 main 只注册 3 个，protobuf 195 个文件只剩 FILE | `core.qnKey` 加入文件路径：`QN\|Kind\|Path`。同文件同 QN+Kind 仍幂等去重；声明/定义（不同 Kind）与跨文件同名定义共存 |
+| **CRLF 把 `\r` 写进 QN** | `normalizeQualified` 只剥空格/`\t`/`\n`，CRLF 源文件跨行限定名残留 `\r`（protobuf 3078 个元素/71 文件） | `normalizeQualified` 增加剥 `\r` |
+| **前导全局 `::` 进 QN** | 生成代码 `::ns::Type` 产出空首段（protobuf 37 个元素） | `normalizeQualified` 剥前导 `::` |
+| **匿名 enum 空名** | `enum : int { A, B };` 的 `type_identifier` 文本为空（非 nil），产出空名 ENUM `ns::` 与 `ns::::A` 常量（protobuf 8 个 ENUM/25 个常量） | `enum_specifier` 归一化后名称为空时按匿名处理：不产 ENUM 元素，常量挂当前容器 |
+| **宏+自定义类型返回类型粘连** | `GTEST_API_ AssertionResult AssertionSuccess()`、`PUGI__FN xml_memory_page* compact_get_page()`、`PUGI__FN xml_attribute xml_node::append_attribute()` 的宏未置空，函数名/类名粘连 | `blankLeadingObjectMacros` 增加「宏后形如 类型+声明符(」判定（`looksLikeDeclarator`） |
+| **宏紧邻 operator** | `bool PUGIXML_FUNCTION operator&&(...)` → `PUGIXML_FUNCTIONoperator&&` | `blankObjectMacroBeforeOperator`：置空紧邻 `operator` 之前的对象式宏 |
+| **函数声明符后尾随宏** | `void f() PUGIXML_NOEXCEPT {` 的尾随宏使整个函数定义失配（pugixml 4 处 body 变孤儿 block） | `blankTrailingMacroAfterParen`：置空 `)` 之后、`{`/`;` 之前的对象式宏 |
+| **函数式宏作类型名** | `class GTEST_1_TUPLE_(T) {` 被当函数调用，容器 QN 变形为 `T()` | `normalizeTypeNameFunctionMacros`：置空类型名后的宏实参，保留宏名作类型名 |
+| **测试宏体成孤儿块** | `TEST(a,b) { ... }` 的 body 成为文件级 compound_statement，内部 lambda/局部变量失去容器（httplib 99 个 lambda、protobuf 84 个 block） | `normalizeTestMacros`：改写为等长 `void <首个标识符>() {`。函数名取 args 首个标识符以保持与原始源码字节一致（Collector 从原始源码取文本）；字符串实参的 `TEST_CASE("...")` 无法字节对齐，仍保留为孤儿块（已知限制） |
+| **block/lambda 序号被同名变量挤占** | 容器内存在名为 `block` 的变量时，作用域块被消歧为 `block$2` | Lambda/ScopeBlock 使用独立计数键 `#block`/`#lambda`，与普通同名元素解耦 |
 
 ## 8. 与 SPI 契约的对应
 

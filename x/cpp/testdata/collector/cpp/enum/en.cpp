@@ -38,6 +38,12 @@ enum {
     ANON_Y
 };
 
+/* 匿名 enum + 指定底层类型（protobuf 生成代码形态）：同样不产 ENUM 元素 */
+enum : int {
+    ANON_TYPED_A = 1,
+    ANON_TYPED_B = 2
+};
+
 /* 显式值 */
 enum Flags {
     F_NONE = 0,

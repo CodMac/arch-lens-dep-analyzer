@@ -935,8 +935,12 @@ func (c *Collector) assignQN(it *identified, currentQN string, occurrences map[s
 
 	switch elem.Kind {
 	case model.Lambda, model.ScopeBlock:
-		occurrences[elem.Name]++
-		name = fmt.Sprintf("%s$%d", elem.Name, occurrences[elem.Name])
+		// Lambda/ScopeBlock 的 `$N` 是「同容器第 N 个 lambda/block」的序号，
+		// 与普通同名元素（如名为 `block` 的变量）无关，故用独立计数键，
+		// 避免变量 `block` 把作用域块挤成 `block$2`。
+		key := "#" + elem.Name
+		occurrences[key]++
+		name = fmt.Sprintf("%s$%d", elem.Name, occurrences[key])
 	default:
 		key := name + suffix
 		occurrences[key]++

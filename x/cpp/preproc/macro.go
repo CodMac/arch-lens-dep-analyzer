@@ -52,8 +52,53 @@ func normalizeTypeMacros(src []byte) ([]byte, []MacroAnn) {
 		return rebuildWithBlanked(m, sub, 4)
 	})
 	out = normalizeProtoMacros(out)
+	out = normalizeTypeNameFunctionMacros(out)
 	out = normalizeStatementMacros(out)
+	out = normalizeTestMacros(out, src)
 	return out, anns
+}
+
+// typeNameFunctionMacroRe 匹配「函数式宏直接充当类型名」的声明：
+// `class GTEST_1_TUPLE_(T) {`。tree-sitter 会把 `GTEST_1_TUPLE_(T)` 解析成
+// 函数式调用，导致类型名丢失/类体失配。这里把实参 `(...)` 置空，保留宏名
+// 作为类型名（`class GTEST_1_TUPLE_    {`），语法恢复为正常类型声明。
+var typeNameFunctionMacroRe = regexp.MustCompile(`(?m)^([ \t]*(?:class|struct|union|enum)[ \t]+)([A-Z_][A-Z0-9_]*)\(`)
+
+// normalizeTypeNameFunctionMacros 置空「函数式宏作类型名」的实参。
+func normalizeTypeNameFunctionMacros(src []byte) []byte {
+	out := make([]byte, len(src))
+	copy(out, src)
+	for _, idx := range typeNameFunctionMacroRe.FindAllSubmatchIndex(src, -1) {
+		// idx: [fullStart, fullEnd, g1s,g1e, g2s,g2e]；g2e 即 `(` 的位置。
+		if len(idx) < 6 {
+			continue
+		}
+		open := idx[5]
+		if open >= len(src) || src[open] != '(' {
+			continue
+		}
+		depth := 0
+		end := -1
+		for k := open; k < len(src); k++ {
+			switch src[k] {
+			case '(':
+				depth++
+			case ')':
+				depth--
+				if depth == 0 {
+					end = k + 1
+				}
+			}
+			if end >= 0 {
+				break
+			}
+		}
+		if end < 0 {
+			continue
+		}
+		blankRange(out, open, end)
+	}
+	return out
 }
 
 // normalizeStatementMacros 置空「独占一行的对象式宏调用」。
@@ -102,6 +147,10 @@ func normalizeStatementMacros(src []byte) []byte {
 		blankQualifiedFunctionMacro(out, src, pos, eol, fnMacros)
 		// 4) 整行只有一个函数式宏调用：语句宏（GTEST_DISABLE_MSC_WARNINGS_PUSH_(4180)）。
 		blankStandaloneFunctionMacro(out, src, pos, eol, fnMacros)
+		// 5) 紧邻 operator 之前的对象式宏（PUGIXML_FUNCTION operator&&）。
+		blankObjectMacroBeforeOperator(out, src, pos, eol, objMacros)
+		// 6) 函数声明符之后的尾随宏（`f(...) PUGIXML_NOEXCEPT {`）。
+		blankTrailingMacroAfterParen(out, src, pos, eol, objMacros)
 		pos = eol + 1
 	}
 	return out
@@ -169,12 +218,126 @@ func blankLeadingObjectMacros(out, src []byte, pos, eol int, macros map[string]b
 	}
 	next := string(src[s:j])
 	qualified := j+1 < eol && src[j] == ':' && src[j+1] == ':'
-	if !builtinTypeWords[next] && !qualified {
+	// 自定义类型返回类型：`GTEST_API_ AssertionResult AssertionSuccess(...)`、
+	// `PUGI__FN xml_memory_page* compact_get_page(...)`、
+	// `PUGI__FN xml_attribute xml_node::append_attribute(...)`。
+	// 判据：宏之后形如「类型 + 声明符(」。
+	if !builtinTypeWords[next] && !qualified && !looksLikeDeclarator(src[:eol], s) {
 		return
 	}
 	for _, sp := range spans {
 		blankRange(out, sp[0], sp[1])
 	}
+}
+
+// looksLikeDeclarator 判定 line[from:] 是否形如「类型 + 声明符(」。
+// 用于识别行首注解宏之后的真实函数声明（宏 + 自定义类型 + 函数名）。
+// 只扫描到第一个 `(` / `=` / `;`，避免把 `MACRO Type var = f();` 误判为声明。
+func looksLikeDeclarator(line []byte, from int) bool {
+	i := from
+	idents := 0
+	qualified := false
+	for i < len(line) {
+		c := line[i]
+		switch {
+		case c == ' ' || c == '\t' || c == '\r':
+			i++
+		case c == ':' && i+1 < len(line) && line[i+1] == ':':
+			qualified = true
+			i += 2
+		case c == '*' || c == '&':
+			i++
+		case c == '<':
+			depth := 0
+			for i < len(line) {
+				if line[i] == '<' {
+					depth++
+				} else if line[i] == '>' {
+					depth--
+					if depth == 0 {
+						i++
+						break
+					}
+				}
+				i++
+			}
+		case isIdentChar(c):
+			for i < len(line) && isIdentChar(line[i]) {
+				i++
+			}
+			idents++
+		case c == '(':
+			return qualified || idents >= 2
+		default:
+			return false
+		}
+	}
+	return false
+}
+
+// blankTrailingMacroAfterParen 置空函数声明符 `)` 之后的尾随对象式宏。
+//
+// 例：`PUGI__FN void f() PUGIXML_NOEXCEPT {` → 置空 PUGIXML_NOEXCEPT。
+// 未展开时 tree-sitter 会把尾随宏当作声明符的一部分，导致整个函数定义失配。
+// 仅当宏后紧跟 `{` / `;` / 行尾时处理。
+func blankTrailingMacroAfterParen(out, src []byte, pos, eol int, macros map[string]bool) {
+	line := src[pos:eol]
+	// 找到最后一个 `)`（声明符结束），其后只允许空白 + 宏 + 空白 + `{`/`;`/行尾。
+	close := bytes.LastIndexByte(line, ')')
+	if close < 0 {
+		return
+	}
+	i := close + 1
+	for i < len(line) && (line[i] == ' ' || line[i] == '\t' || line[i] == '\r') {
+		i++
+	}
+	s := i
+	for i < len(line) && isIdentChar(line[i]) {
+		i++
+	}
+	if i == s {
+		return
+	}
+	name := string(line[s:i])
+	if !macros[name] && !isMacroLikeName(name) {
+		return
+	}
+	j := i
+	for j < len(line) && (line[j] == ' ' || line[j] == '\t' || line[j] == '\r') {
+		j++
+	}
+	if j < len(line) && line[j] != '{' && line[j] != ';' {
+		return
+	}
+	blankRange(out, pos+s, pos+i)
+}
+
+// blankObjectMacroBeforeOperator 置空紧邻 operator 之前的对象式宏。
+//
+// 例：`bool PUGIXML_FUNCTION operator&&(...)` → `bool              operator&&(...)`。
+// 未展开时 tree-sitter 会把 `PUGIXML_FUNCTIONoperator&&` 当作函数名。
+func blankObjectMacroBeforeOperator(out, src []byte, pos, eol int, macros map[string]bool) {
+	line := src[pos:eol]
+	idx := bytes.Index(line, []byte("operator"))
+	if idx < 0 {
+		return
+	}
+	j := idx
+	for j > 0 && (line[j-1] == ' ' || line[j-1] == '\t') {
+		j--
+	}
+	end := j
+	for j > 0 && isIdentChar(line[j-1]) {
+		j--
+	}
+	if j == end {
+		return
+	}
+	name := string(line[j:end])
+	if !macros[name] && !isMacroLikeName(name) {
+		return
+	}
+	blankRange(out, pos+j, pos+end)
 }
 
 // blankQualifiedFunctionMacro 置空「限定符 + 函数式宏」的返回类型宏。
@@ -293,6 +456,124 @@ func blankStandaloneFunctionMacro(out, src []byte, pos, eol int, macros map[stri
 		return
 	}
 	blankRange(out, s, end)
+}
+
+// testMacroNames 是「宏调用后紧跟函数体 `{`」的测试框架宏。
+// 未展开时 `TEST(a,b) { ... }` 的 body 会成为文件级 compound_statement，
+// 内部 lambda/局部变量失去容器（QN 退化为裸 lambda$N / block$N）。
+var testMacroNames = map[string]bool{
+	"TEST": true, "TEST_F": true, "TEST_P": true,
+	"TYPED_TEST": true, "TYPED_TEST_P": true,
+}
+
+// normalizeTestMacros 把 `TEST(args) {` 改写为等长的 `void <name>() {`，
+// 使测试体恢复为普通函数定义（获得函数容器与可解析 QN）。
+// `<name>` 由 args 消毒得到（非标识符字符转 `_`），超长时截断以保持等长。
+func normalizeTestMacros(out, src []byte) []byte {
+	pos := 0
+	for pos < len(src) {
+		eol := bytes.IndexByte(src[pos:], '\n')
+		if eol < 0 {
+			eol = len(src)
+		} else {
+			eol += pos
+		}
+		line := src[pos:eol]
+		i := 0
+		for i < len(line) && (line[i] == ' ' || line[i] == '\t') {
+			i++
+		}
+		s := i
+		for i < len(line) && isIdentChar(line[i]) {
+			i++
+		}
+		name := string(line[s:i])
+		if !testMacroNames[name] || i >= len(line) || line[i] != '(' {
+			pos = eol + 1
+			continue
+		}
+		depth := 0
+		end := -1
+		for k := i; k < len(line); k++ {
+			switch line[k] {
+			case '(':
+				depth++
+			case ')':
+				depth--
+				if depth == 0 {
+					end = k + 1
+				}
+			}
+			if end >= 0 {
+				break
+			}
+		}
+		if end < 0 {
+			pos = eol + 1
+			continue
+		}
+		j := end
+		for j < len(line) && (line[j] == ' ' || line[j] == '\t' || line[j] == '\r') {
+			j++
+		}
+		hasBody := j < len(line) && line[j] == '{'
+		if !hasBody && j >= len(line) {
+			// `{` 可能在下一行（doctest 风格）：向后跳过空白/换行再看一个字符。
+			k := eol + 1
+			for k < len(src) && (src[k] == ' ' || src[k] == '\t' || src[k] == '\r' || src[k] == '\n') {
+				k++
+			}
+			hasBody = k < len(src) && src[k] == '{'
+		}
+		if !hasBody {
+			pos = eol + 1
+			continue
+		}
+		repl := synthTestFuncDecl(string(line[i+1:end-1]), end-s)
+		if repl == "" {
+			pos = eol + 1
+			continue
+		}
+		copy(out[pos+s:pos+end], repl)
+		pos = eol + 1
+	}
+	return out
+}
+
+// synthTestFuncDecl 由测试宏实参生成等长的 `void <name>()` 声明。
+// width 是原 `MACRO(args)` 的字节长度；无法容纳时返回 ""。
+//
+// 关键约束：Collector 从**原始源码**按 AST 节点字节区间取文本（投影等长特性），
+// 因此生成的函数名必须是原始 args 起始处的**同一段字节**——否则 Collector 会
+// 读到被改写的错位文本（如 `ProductionCode2, IgnoredTes`）。故 name 取 args 的
+// 首个标识符（通常是测试套件名），并保证其字节区间与原文字节一致。
+// args 不以标识符开头（如字符串实参的 TEST_CASE）时返回 ""（跳过改写）。
+func synthTestFuncDecl(args string, width int) string {
+	i := 0
+	for i < len(args) && (args[i] == ' ' || args[i] == '\t') {
+		i++
+	}
+	s := i
+	if i >= len(args) || !isIdentChar(args[i]) || (args[i] >= '0' && args[i] <= '9') {
+		return ""
+	}
+	for i < len(args) && isIdentChar(args[i]) {
+		i++
+	}
+	name := args[s:i]
+	const prefix, suffix = "void ", "()"
+	max := width - len(prefix) - len(suffix)
+	if max < 1 {
+		return ""
+	}
+	if len(name) > max {
+		name = name[:max]
+	}
+	repl := prefix + name + suffix
+	for len(repl) < width {
+		repl += " "
+	}
+	return repl
 }
 
 // blankRange 把 [from, to) 置为空格（保留换行）。

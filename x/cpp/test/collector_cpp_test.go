@@ -1,8 +1,11 @@
 package test
 
 import (
+	"reflect"
+	"sort"
 	"testing"
 
+	"github.com/CodMac/arch-lens-dep-analyzer/core"
 	"github.com/CodMac/arch-lens-dep-analyzer/model"
 	"github.com/CodMac/arch-lens-dep-analyzer/x/cpp/constants"
 	cppctx "github.com/CodMac/arch-lens-dep-analyzer/x/cpp/context"
@@ -492,6 +495,10 @@ func TestCollectorCppEnum(t *testing.T) {
 	// 匿名 enum：常量挂文件级，不产 ENUM 元素
 	AssertDef(t, gc, "ANON_X", model.EnumConstant)
 	AssertDef(t, gc, "ANON_Y", model.EnumConstant)
+	// 匿名 enum + 指定底层类型（`enum : int {}`，protobuf 生成代码形态）：
+	// 同样不产空名 ENUM，常量挂当前容器。
+	AssertDef(t, gc, "ANON_TYPED_A", model.EnumConstant)
+	AssertDef(t, gc, "ANON_TYPED_B", model.EnumConstant)
 
 	// 显式值
 	AssertDef(t, gc, "Flags", model.Enum)
@@ -1181,5 +1188,27 @@ func TestCollectorCpp(t *testing.T) {
 	ns := nfc.Namespaces()
 	if len(ns) != 2 || ns[0] != "app" || ns[1] != "app::core" {
 		t.Errorf("Namespaces = %v, want [app app::core]", ns)
+	}
+}
+
+// TestCollectorCppCrossFileSameQN 跨文件同 QN+Kind 必须共存（C/C++ static/main/合并副本）。
+// 回归 D1：全局索引键曾不含文件路径，导致后注册文件的同名定义整体丢失。
+func TestCollectorCppCrossFileSameQN(t *testing.T) {
+	paths := ResolvePaths(t, "collector/cpp/dup_files", "*.cpp")
+	ec := RunPipeline(t, "x/cpp/testdata", paths, core.LevelRaw)
+
+	var got []string
+	for _, d := range ec.GC.Definitions() {
+		if d.Element.Kind == model.Function && d.Element.QualifiedName == "main()" {
+			got = append(got, d.Element.Path)
+		}
+	}
+	sort.Strings(got)
+	want := []string{
+		"collector/cpp/dup_files/a.cpp",
+		"collector/cpp/dup_files/b.cpp",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("main() definitions across files = %v, want %v", got, want)
 	}
 }

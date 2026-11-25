@@ -164,9 +164,29 @@ func TestProtoMacroReturnType(t *testing.T) {
 	if !bytes.Contains(out, []byte("cJSON *")) || !bytes.Contains(out, []byte("cJSON_Parse(const char *value);")) {
 		t.Errorf("second prototype not restored: %q", out)
 	}
-	// 带逗号的宏（TEST_F）不是返回类型宏，必须保持原样。
-	if !bytes.Contains(out, []byte("TEST_F(Foo, Bar)")) {
-		t.Errorf("comma macro should be untouched: %q", out)
+	// 带逗号的宏（TEST_F）不是返回类型宏，由 normalizeTestMacros 转成函数定义。
+	if bytes.Contains(out, []byte("TEST_F(Foo, Bar)")) {
+		t.Errorf("test macro should be rewritten to a function: %q", out)
+	}
+}
+
+// TestTestMacroBody `TEST(args) { ... }` 应改写为等长函数定义，使 body 获得容器。
+func TestTestMacroBody(t *testing.T) {
+	src := []byte("TEST(Suite, Name) {\n  auto f = [] { return 1; };\n}\n" +
+		"TEST_F(Foo, Bar) {}\n")
+	out := NormalizeMacros(src)
+	if len(out) != len(src) {
+		t.Fatalf("length changed: %d -> %d", len(src), len(out))
+	}
+	if bytes.Contains(out, []byte("TEST(Suite, Name)")) || bytes.Contains(out, []byte("TEST_F(Foo, Bar)")) {
+		t.Errorf("test macro call should be rewritten: %q", out)
+	}
+	// 函数名取 args 首个标识符（与原始字节一致，保证 Collector 取文本正确）。
+	if !bytes.Contains(out, []byte("void Suite()")) {
+		t.Errorf("expected void Suite(): %q", out)
+	}
+	if !bytes.Contains(out, []byte("void Foo()")) {
+		t.Errorf("expected void Foo(): %q", out)
 	}
 }
 
@@ -224,6 +244,83 @@ func TestLeadingObjectMacros(t *testing.T) {
 	}
 	if !bytes.Contains(out, []byte("std::string\nGetCurrentOsStackTraceExceptTop")) {
 		t.Errorf("return type and function name must remain: %q", out)
+	}
+}
+
+// TestLeadingMacroCustomType 行首注解宏后接自定义类型 + 函数名时应置空宏。
+func TestLeadingMacroCustomType(t *testing.T) {
+	src := []byte("#define GTEST_API_ __attribute__((visibility(\"default\")))\n" +
+		"#define PUGI__FN inline\n" +
+		"GTEST_API_ AssertionResult AssertionSuccess();\n" +
+		"PUGI__FN xml_memory_page* compact_get_page(const void* object, int offset)\n" +
+		"PUGI__FN xml_attribute xml_node::append_attribute(const char_t* name_)\n" +
+		"  { return xml_attribute(); }\n" +
+		"GTEST_API_ SomeType plain_variable;\n")
+	out := NormalizeMacros(src)
+	if len(out) != len(src) {
+		t.Fatalf("length changed: %d -> %d", len(src), len(out))
+	}
+	if bytes.Contains(out, []byte("GTEST_API_ AssertionResult")) || bytes.Contains(out, []byte("PUGI__FN xml_")) {
+		t.Errorf("leading annotation macros should be blanked: %q", out)
+	}
+	if !bytes.Contains(out, []byte("AssertionResult AssertionSuccess();")) {
+		t.Errorf("declarator must remain: %q", out)
+	}
+	if !bytes.Contains(out, []byte("xml_node::append_attribute(const char_t* name_)")) {
+		t.Errorf("qualified declarator must remain: %q", out)
+	}
+	// 无 `(` 的变量声明不应触发置空。
+	if !bytes.Contains(out, []byte("GTEST_API_ SomeType plain_variable;")) {
+		t.Errorf("plain variable declaration should be untouched: %q", out)
+	}
+}
+
+// TestMacroBeforeOperator 紧邻 operator 之前的对象式宏应置空。
+func TestMacroBeforeOperator(t *testing.T) {
+	src := []byte("#define PUGIXML_FUNCTION inline\n" +
+		"bool PUGIXML_FUNCTION operator&&(const xml_attribute& lhs, bool rhs);\n")
+	out := NormalizeMacros(src)
+	if len(out) != len(src) {
+		t.Fatalf("length changed: %d -> %d", len(src), len(out))
+	}
+	if bytes.Contains(out, []byte("PUGIXML_FUNCTIONoperator")) {
+		t.Errorf("macro before operator should be blanked: %q", out)
+	}
+	if !bytes.Contains(out, []byte("operator&&(const xml_attribute& lhs, bool rhs);")) {
+		t.Errorf("operator declarator must remain: %q", out)
+	}
+}
+
+// TestTrailingMacroAfterParen 函数声明符之后的尾随宏应置空。
+func TestTrailingMacroAfterParen(t *testing.T) {
+	src := []byte("#define PUGIXML_NOEXCEPT noexcept\n" +
+		"PUGI__FN void f(int a) PUGIXML_NOEXCEPT\n{\n  g(a);\n}\n" +
+		"int h() PUGIXML_NOEXCEPT;\n")
+	out := NormalizeMacros(src)
+	if len(out) != len(src) {
+		t.Fatalf("length changed: %d -> %d", len(src), len(out))
+	}
+	if bytes.Contains(out, []byte("PUGIXML_NOEXCEPT\n{")) || bytes.Contains(out, []byte("PUGIXML_NOEXCEPT;")) {
+		t.Errorf("trailing macro should be blanked: %q", out)
+	}
+	if !bytes.Contains(out, []byte("void f(int a) ")) || !bytes.Contains(out, []byte("int h() ")) {
+		t.Errorf("declarator must remain: %q", out)
+	}
+}
+
+// TestFunctionMacroAsTypeName 函数式宏作类型名时应置空实参、保留宏名。
+func TestFunctionMacroAsTypeName(t *testing.T) {
+	src := []byte("#define GTEST_1_TUPLE_(T) tuple<T##0>\n" +
+		"class GTEST_1_TUPLE_(T) {\n public:\n  int f0_;\n};\n")
+	out := NormalizeMacros(src)
+	if len(out) != len(src) {
+		t.Fatalf("length changed: %d -> %d", len(src), len(out))
+	}
+	if bytes.Contains(out, []byte("class GTEST_1_TUPLE_(T)")) {
+		t.Errorf("macro args should be blanked: %q", out)
+	}
+	if !bytes.Contains(out, []byte("class GTEST_1_TUPLE_ ")) {
+		t.Errorf("macro name should remain as type name: %q", out)
 	}
 }
 
