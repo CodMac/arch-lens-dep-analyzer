@@ -110,7 +110,9 @@ func (l *Linker) linkImpl(gc core.GlobalContext, relMap map[string]*model.Depend
 		if !isFunctionKind(elem.Kind) {
 			continue
 		}
-		if isStaticFunc(elem) {
+		// static 自由函数是内部链接、无跨文件声明，不参与配对；
+		// static 成员函数是外部链接（声明在类内、定义在类外），应正常配对。
+		if isStaticFreeFunc(elem) {
 			continue
 		}
 		sig := implSignature(elem)
@@ -245,7 +247,15 @@ func paramTypeOnly(p string) string {
 	return p
 }
 
-// isStaticFunc 判定函数是否为 static（不参与 ImplLink 配对）。
+// isStaticFreeFunc 判定是否为 static 自由函数（内部链接，不参与 ImplLink 配对）。
+func isStaticFreeFunc(elem *model.CodeElement) bool {
+	if elem.Kind != model.Function && elem.Kind != model.FunctionDecl {
+		return false
+	}
+	return isStaticFunc(elem)
+}
+
+// isStaticFunc 判定函数是否为 static。
 func isStaticFunc(elem *model.CodeElement) bool {
 	if elem.Extra == nil {
 		return false

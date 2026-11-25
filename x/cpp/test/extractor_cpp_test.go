@@ -650,3 +650,19 @@ func TestExtractorCppImplLinkMultiDecl(t *testing.T) {
 		}
 	}
 }
+
+// TestExtractorCppImplLinkStatic static 成员函数参与 ImplLink，static 自由函数不参与。
+func TestExtractorCppImplLinkStatic(t *testing.T) {
+	paths := ResolveTree(t, "linker/cpp/impl_static")
+	ec := RunPipeline(t, "x/cpp/testdata", paths, core.LevelRaw)
+
+	FindRel(t, ec.Relations, func(r *model.DependencyRelation) bool {
+		return r.Type == model.ImplLink && r.Source.QualifiedName == "sd::Svc::make(int)" &&
+			r.Target.QualifiedName == "sd::Svc::make(int)"
+	})
+	if HasRel(ec.Relations, func(r *model.DependencyRelation) bool {
+		return r.Type == model.ImplLink && strings.Contains(r.Source.QualifiedName, "local")
+	}) {
+		t.Errorf("static free function should not be ImplLink-paired")
+	}
+}
