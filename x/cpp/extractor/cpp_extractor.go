@@ -280,7 +280,7 @@ func (e *Extractor) extractSignatureRels(fCtx core.FileContext, gc core.GlobalCo
 			}
 			var target *model.CodeElement
 			if i < len(qnParams) {
-				if t := e.lookupTypeQN(gc, qnParams[i]); t != nil {
+				if t := e.lookupTypeQN(gc, fCtx, qnParams[i]); t != nil {
 					target = t
 				}
 			}
@@ -302,7 +302,7 @@ func (e *Extractor) extractSignatureRels(fCtx core.FileContext, gc core.GlobalCo
 	if rt, ok := mores[constants.FunctionReturnType].(string); ok && rt != "" && rt != "void" {
 		var target *model.CodeElement
 		if qn, ok := mores[constants.FunctionReturnTypeWithQN].(string); ok && qn != "" {
-			target = e.lookupTypeQN(gc, qn)
+			target = e.lookupTypeQN(gc, fCtx, qn)
 		}
 		if target == nil {
 			target = e.resolver.ResolveType(gc, fCtx, rt, model.Class)
@@ -337,7 +337,7 @@ func (e *Extractor) extractTypeArgRels(fCtx core.FileContext, gc core.GlobalCont
 		return nil
 	}
 
-	target := e.lookupTypeQN(gc, qn)
+	target := e.lookupTypeQN(gc, fCtx, qn)
 	if target == nil {
 		target = e.resolver.ResolveType(gc, fCtx, raw, model.Class)
 	}
@@ -364,11 +364,16 @@ func (e *Extractor) extractTypeArgRels(fCtx core.FileContext, gc core.GlobalCont
 }
 
 // lookupTypeQN 按 QN 查找类型元素（含声明 kind 容忍）。
-func (e *Extractor) lookupTypeQN(gc core.GlobalContext, qn string) *model.CodeElement {
+// 单大写字母 QN 可能是模板类型变量：只接受本文件内的真实类型，
+// 避免模板参数 T 被其它文件的 struct T 污染。
+func (e *Extractor) lookupTypeQN(gc core.GlobalContext, fCtx core.FileContext, qn string) *model.CodeElement {
 	if qn == "" {
 		return nil
 	}
 	if entry, ok := gc.FindByQualifiedName(qn); ok {
+		if helper.IsTypeVariable(qn) && entry.Element.Path != fCtx.FilePath() {
+			return nil
+		}
 		switch entry.Element.Kind {
 		case model.Class, model.Struct, model.Enum, model.Type:
 			return entry.Element

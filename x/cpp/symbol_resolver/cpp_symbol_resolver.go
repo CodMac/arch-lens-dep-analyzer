@@ -60,7 +60,18 @@ func (r *SymbolResolver) ResolveType(gc core.GlobalContext, fc core.FileContext,
 	if r.IsPrimitive(base) {
 		return &model.CodeElement{Name: base, QualifiedName: base, Kind: model.Primitive, IsFormExternal: true}
 	}
+
+	// 单大写字母（T/B/E…）既可能是真实类型名，也可能是模板类型变量。
+	// 先查**本文件内**的真实类型：命中则是真实类型；未命中按模板变量处理。
+	// 不做跨文件全局查找，避免模板参数 T 被其它文件的 struct T 污染。
 	if helper.IsTypeVariable(base) {
+		if entries, ok := fc.FindByShortName(base); ok {
+			for _, e := range entries {
+				if isTypeKind(e.Element.Kind) {
+					return e.Element
+				}
+			}
+		}
 		return nil
 	}
 

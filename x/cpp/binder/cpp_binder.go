@@ -103,27 +103,24 @@ func (b *Binder) resolveToQN(gc core.GlobalContext, fCtx core.FileContext, owner
 	if b.resolver.IsPrimitive(base) {
 		return base
 	}
-	// 模板类型变量（T/E/S...）不是真实类型依赖。
-	if helper.IsTypeVariable(base) {
-		return base
-	}
 
 	// typedef/using 别名链展开（最多 8 层，防环）。
+	// 单大写字母（T/B/E…）也可能是真实类型或别名，必须先展开/查找，
+	// 只有确实解析不到时才按模板类型变量处理。
 	origBase := base
 	base = b.expandAlias(gc, fCtx, ownerQN, base, 8)
 	if base == "" {
 		return rawType
 	}
+	if b.resolver.IsPrimitive(base) {
+		return base
+	}
 	// 模板别名底层退化为模板变量（template<class T> using Vec = T*;）：
 	// 展开结果 "T" 无意义，保留别名自身 QN。
-	if helper.IsTypeVariable(base) {
+	if helper.IsTypeVariable(base) && base != origBase {
 		if elem := b.findAliasElem(gc, fCtx, ownerQN, origBase); elem != nil {
 			return elem.QualifiedName
 		}
-		return base
-	}
-	if b.resolver.IsPrimitive(base) {
-		return base
 	}
 
 	// 短名 + owner 作用域：沿词法嵌套链上溯（ns::Class::member -> ns::Class -> ns）。
@@ -209,6 +206,10 @@ func (b *Binder) findAliasElem(gc core.GlobalContext, fCtx core.FileContext, own
 		}
 	}
 	// 全局短名：仅唯一候选时使用，避免跨文件同名别名互相污染。
+	// 单大写字母可能是模板类型变量，不做跨文件全局查找（本文件内已查过）。
+	if helper.IsTypeVariable(name) {
+		return nil
+	}
 	var found *model.CodeElement
 	for _, def := range gc.Definitions() {
 		if def.Element.Kind != model.Type || def.Element.Name != name {

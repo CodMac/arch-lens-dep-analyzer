@@ -447,3 +447,28 @@ func TestExtractorCppModule(t *testing.T) {
 		}
 	}
 }
+
+// TestExtractorCppSingleLetterType 单大写字母的真实类型（T/B）不被当作模板变量。
+func TestExtractorCppSingleLetterType(t *testing.T) {
+	paths := ResolvePaths(t, "extractor/cpp/single_letter", "*.cpp")
+	_, rels := RunExtraction(t, "x/cpp/testdata", paths)
+
+	// 继承：U : T、n::D : n::B
+	FindRel(t, rels, func(r *model.DependencyRelation) bool {
+		return r.Type == model.Extend && r.Source.QualifiedName == "U" && r.Target.QualifiedName == "T"
+	})
+	FindRel(t, rels, func(r *model.DependencyRelation) bool {
+		return r.Type == model.Extend && r.Source.QualifiedName == "n::D" && r.Target.QualifiedName == "n::B"
+	})
+	// 参数：take_t(T)、n::take_b(n::B)
+	FindRel(t, rels, func(r *model.DependencyRelation) bool {
+		return r.Type == model.Parameter && r.Source.QualifiedName == "take_t(T)" && r.Target.QualifiedName == "T"
+	})
+	FindRel(t, rels, func(r *model.DependencyRelation) bool {
+		return r.Type == model.Parameter && r.Source.QualifiedName == "n::take_b(B)" && r.Target.QualifiedName == "n::B"
+	})
+	// 返回类型：make_t() → T
+	FindRel(t, rels, func(r *model.DependencyRelation) bool {
+		return r.Type == model.Return && r.Source.QualifiedName == "make_t()" && r.Target.QualifiedName == "T"
+	})
+}
