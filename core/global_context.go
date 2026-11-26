@@ -70,6 +70,15 @@ type GlobalContext interface {
 	Builder() SymbolBuilder
 }
 
+// FileVisibility 是语言可选能力：按文件返回可见定义视图。
+//
+// 语言实现可基于 include/import/namespace/package 私有等规则裁剪；
+// 未实现该接口的语言，调用方应退回 Definitions() 全量视图。
+type FileVisibility interface {
+	// VisibleDefinitions 返回 fromFile 可见的全部定义。
+	VisibleDefinitions(fromFile string) []*DefinitionEntry
+}
+
 // DefinitionIndex 是语言实现提供的全局定义索引。
 //
 // 索引主键、声明/定义替换、重载候选归并均属语言语义，core 只保留契约：

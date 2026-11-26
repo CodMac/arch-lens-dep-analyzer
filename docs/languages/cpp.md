@@ -129,6 +129,8 @@ C/C++ 的全局索引由 `x/cpp/context.NewDefinitionIndex` 提供（`core.Defin
 
 已知边界：`primaryIndex` / `overloadIndex` 仍以**裸 QN** 为键。当同一 QN 在多个翻译单元出现（`static` 函数、`inline`、匿名 namespace 的 `$anon` 实体）时，`FindByQualifiedName` 只返回其中一个，无法表达 per-TU 可见性。这是索引层的独立设计问题，**不应**用 `$N` 解决（加后缀反而破坏跨文件合法共存）。
 
+per-TU 可见性由 `core.FileVisibility` 提供：`x/cpp/context` 的 `VisibleDefinitions(fromFile)` 返回「本文件 + include 可达文件（精确/后缀匹配）+ 全局作用域定义」的近似视图。宏展开与 include 目录搜索不在建模范围；Resolver 尚未接入（见 §7.5 R-1/R-3）。
+
 ### 2.4 展示层三字段（NamespaceQN / EnclosingQN / TypeQN）
 
 Collector 末尾（Step 5，全部定义注册与 namespace 汇总之后）统一填充，仅用于展示，不参与符号解析：

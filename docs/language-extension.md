@@ -243,12 +243,12 @@ type DefinitionIndex interface {
 
 | # | 优先级 | Gap | 说明 |
 |---|---|---|---|
-| V-1 | P1 | 全局上下文无「按文件可见性」视图 | Java 在语言层用 `fc.Imports()` 做 import 可见性；C++ 无对应能力（对应 `languages/cpp.md` B-7），只能全局短名回退，跨文件同名即误命中 |
-| V-2 | P2 | 缺统一可见性能力契约 | 可见性规则（import / include / namespace / package 私有）散落在各语言 Resolver，无公共可选能力接口 |
+| V-1 | ~~P1~~ 已修复 | 全局上下文无「按文件可见性」视图 | Java 在语言层用 `fc.Imports()` 做 import 可见性；C++ 无对应能力（对应 `languages/cpp.md` B-7）。**修复**：新增 `core.FileVisibility`，`x/cpp/context` 实现：本文件 + include 可达文件（精确/后缀匹配）+ 全局作用域定义。Resolver 接入留待 R-1/R-3 |
+| V-2 | ~~P2~~ 已修复 | 缺统一可见性能力契约 | **修复**：`core.FileVisibility.VisibleDefinitions(fromFile)` 作为公共可选能力接口，各语言按自身规则（import/include/namespace/package 私有）实现 |
 
 ### 8.5 修复优先级
 
 - **P0**：G-1（注册顺序确定化：按路径排序注册 + 歧义显式判 nil，禁止「先到先得」）。
-- **P1**：~~主键与三索引下沉~~（已由 `DefinitionIndex` 完成）、~~F-1~~、~~G-2~~、~~G-3~~、V-1。
+- **P1**：~~主键与三索引下沉~~（已由 `DefinitionIndex` 完成）、~~F-1~~、~~G-2~~、~~G-3~~、~~V-1~~。
 - **P2**：F-3/F-4/F-5、G-4/G-5/G-6、V-2。
 - **P3**：F-6/F-7、G-7/G-8/G-9。
