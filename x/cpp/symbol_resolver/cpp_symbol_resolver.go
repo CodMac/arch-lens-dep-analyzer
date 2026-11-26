@@ -542,15 +542,22 @@ func (r *SymbolResolver) textType(gc core.GlobalContext, fc core.FileContext, e 
 }
 
 // returnTypeOf 取函数元素的返回类型元素（优先 QN 版本，退回原始文本）。
+// 源码内类型优先；外部类型（std::string 等）也返回外部类型元素，
+// 使 `make().size()` 能按接收者类型解析为 std::string::size 而非 make()::size。
 func (r *SymbolResolver) returnTypeOf(gc core.GlobalContext, fc core.FileContext, fn *model.CodeElement) *model.CodeElement {
 	if fn == nil || fn.Extra == nil {
 		return nil
 	}
 	for _, key := range []string{constants.FunctionReturnTypeWithQN, constants.FunctionReturnType} {
 		if t, ok := fn.Extra.Mores[key].(string); ok && t != "" {
-			if elem := r.lookupType(gc, fc, helper.BaseTypeName(t)); elem != nil {
+			base := helper.BaseTypeName(t)
+			if elem := r.lookupType(gc, fc, base); elem != nil {
 				return elem
 			}
+			if base == "" || r.IsPrimitive(base) || helper.IsTypeVariable(base) {
+				continue
+			}
+			return helper.NewExternalElement(model.Class, base, base)
 		}
 	}
 	return nil

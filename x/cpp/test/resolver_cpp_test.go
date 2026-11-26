@@ -635,3 +635,21 @@ func TestResolverCppUnknownReceiver(t *testing.T) {
 			r.Target.QualifiedName == "zz::freeFn" && r.Target.IsFormExternal
 	})
 }
+
+// TestResolverCppReturnExternalChain 返回类型链式调用：外部返回类型按外部
+// 类型归属接收者，源码内返回类型仍按源码类型解析。
+func TestResolverCppReturnExternalChain(t *testing.T) {
+	paths := ResolvePaths(t, "resolver/cpp/ret_external", "*.cpp")
+	ec := RunPipeline(t, "x/cpp/testdata", paths, core.LevelRaw)
+
+	// makeName().size() → std::string::size（外部方法）
+	FindRel(t, ec.Relations, func(r *model.DependencyRelation) bool {
+		return r.Type == model.Call && r.Source.QualifiedName == "ret::useExternalChain()" &&
+			r.Target.QualifiedName == "std::string::size" && r.Target.IsFormExternal
+	})
+	// makeSvc().run() → ret::Svc::run()（源码方法）
+	FindRel(t, ec.Relations, func(r *model.DependencyRelation) bool {
+		return r.Type == model.Call && r.Source.QualifiedName == "ret::useSourceChain()" &&
+			r.Target.QualifiedName == "ret::Svc::run()" && !r.Target.IsFormExternal
+	})
+}
