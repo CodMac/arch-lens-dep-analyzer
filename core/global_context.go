@@ -62,48 +62,48 @@ type GlobalContext interface {
 	Builder() SymbolBuilder
 }
 
-// GlobalContextRules 描述语言对全局符号索引的策略差异（core 不含语言硬编码）。
-type GlobalContextRules struct {
-	// OverloadKinds 参与「去参 QN 重载索引」的元素 kind。
-	// Java 仅 Method；C/C++ 含 Method/Function/MethodDecl/FunctionDecl。
-	OverloadKinds map[model.ElementKind]struct{}
+// DefinitionIndex 是语言实现提供的全局定义索引。
+//
+// 索引主键、声明/定义替换、重载候选归并均属语言语义，core 只保留契约：
+//   - 全量索引键：Java 为 QN+Kind+Path；C/C++ 同为 QN+Kind+Path（声明/定义与
+//     跨文件同名需共存），但语义由各自实现负责；
+//   - 主索引：裸 QN → 「定义优先」条目；
+//   - 重载索引：去参 QN → 候选（Java 仅 Method，C/C++ 含 Function 族）。
+//
+// 实现内部不加锁：调用方（BaseGlobalContext）在同一把锁下读写。
+type DefinitionIndex interface {
+	// Add 索引一个定义。
+	//   added=false 表示同键已存在（重复定义，忽略）；
+	//   replaced 非 nil 表示该定义原地替换了旧条目（如声明 → 定义）。
+	Add(def *DefinitionEntry) (replaced *DefinitionEntry, added bool)
+
+	// FindByQualifiedName 按限定名查找定义（定义优先）。
+	FindByQualifiedName(qn string) (*DefinitionEntry, bool)
+
+	// FindOverloadCandidates 按不含参数的 QN 查找可重载候选。
+	FindOverloadCandidates(noParamsQN string) ([]*DefinitionEntry, bool)
 }
 
-// BaseGlobalContext 是 GlobalContext 的通用实现：提供索引/锁/去重等语言无关机制。
-// 语言实现内嵌本结构复用基础能力，可按需覆盖方法。
+// BaseGlobalContext 是 GlobalContext 的通用实现：只保留容器、锁与生命周期，
+// 索引结构与策略由语言实现注入的 DefinitionIndex 承担。
 type BaseGlobalContext struct {
 	resolver SymbolResolver
 	builder  SymbolBuilder
-
-	rules GlobalContextRules
+	index    DefinitionIndex
 
 	mu           sync.RWMutex
 	fileContexts map[string]FileContext
 	definitions  []*DefinitionEntry
-
-	// qnIndex 全量索引：key = QN + "|" + Kind + "|" + Path。声明/定义共存（G2），
-	// 跨文件同名定义共存（C/C++ static / main / 合并副本）。
-	qnIndex map[string]*DefinitionEntry
-
-	// primaryIndex 主索引：key = 裸 QN，指向「定义优先」的元素（O(1) 查找）。
-	// 声明条目不覆盖已有定义，故 FindByQualifiedName 定义优先。
-	primaryIndex map[string]*DefinitionEntry
-
-	// overloadIndex 重载候选索引：key = 不含参数的 QN，value = 候选定义。
-	overloadIndex map[string][]*DefinitionEntry
 }
 
 // NewBaseGlobalContext 创建全局上下文 Base 实现。
-func NewBaseGlobalContext(resolver SymbolResolver, builder SymbolBuilder, rules GlobalContextRules) *BaseGlobalContext {
+func NewBaseGlobalContext(resolver SymbolResolver, builder SymbolBuilder, index DefinitionIndex) *BaseGlobalContext {
 	return &BaseGlobalContext{
-		resolver:      resolver,
-		builder:       builder,
-		rules:         rules,
-		fileContexts:  make(map[string]FileContext),
-		definitions:   make([]*DefinitionEntry, 0),
-		qnIndex:       make(map[string]*DefinitionEntry),
-		primaryIndex:  make(map[string]*DefinitionEntry),
-		overloadIndex: make(map[string][]*DefinitionEntry),
+		resolver:     resolver,
+		builder:      builder,
+		index:        index,
+		fileContexts: make(map[string]FileContext),
+		definitions:  make([]*DefinitionEntry, 0),
 	}
 }
 
@@ -151,88 +151,36 @@ func (gc *BaseGlobalContext) AddDefinition(def *DefinitionEntry) {
 	gc.addDefinitionLocked(def)
 }
 
-// qnKey 构造全量索引键：QN + "|" + Kind + "|" + Path。
-// 声明/定义分离语言（C/C++）中声明与定义 QN 相同但 Kind 不同（FUNCTION_DECL vs FUNCTION），
-// 纯 QN 去重会吞掉后注册者，故 key 含 Kind 使两者共存（G2）。
-//
-// key 还必须含文件路径：C/C++ 中 `static` 函数、多个示例文件的 `main`、合并副本
-// （如 protobuf 的 php/ruby upb amalgamation）会在不同文件出现相同 QN+Kind，
-// 它们是各自独立的定义，不能跨文件去重（否则整文件元素丢失）。
-func qnKey(qn string, kind model.ElementKind, path string) string {
-	return qn + "|" + string(kind) + "|" + path
-}
-
+// addDefinitionLocked 调用语言索引登记定义，并维护 definitions 切片。
+// 索引负责去重与声明/定义替换判定，Base 只按结果同步切片顺序。
 func (gc *BaseGlobalContext) addDefinitionLocked(def *DefinitionEntry) {
-	key := qnKey(def.Element.QualifiedName, def.Element.Kind, def.Element.Path)
-	if existing, exists := gc.qnIndex[key]; exists {
-		// 声明与定义同 QN 同 Kind（C 的 struct Fwd; struct Fwd{};）：定义覆盖声明。
-		if existing.IsDeclaration && !def.IsDeclaration {
-			gc.replaceDefinitionLocked(existing, def)
-			gc.qnIndex[key] = def
-			gc.primaryIndex[def.Element.QualifiedName] = def
-		}
+	replaced, added := gc.index.Add(def)
+	if !added {
 		return
 	}
-	gc.definitions = append(gc.definitions, def)
-	gc.qnIndex[key] = def
-
-	// 主索引：定义优先。声明不覆盖已有定义（定义优先语义），
-	// 但纯声明符号（无对应定义）仍需可查找（如 C++ 头文件成员声明），故不存在时填入；
-	// 若先注册的是声明、后注册定义，则定义覆盖声明。
-	if existing, exists := gc.primaryIndex[def.Element.QualifiedName]; !exists {
-		gc.primaryIndex[def.Element.QualifiedName] = def
-	} else if existing.IsDeclaration && !def.IsDeclaration {
-		gc.primaryIndex[def.Element.QualifiedName] = def
-	}
-
-	if gc.isOverloadKind(def.Element.Kind) {
-		key := gc.builder.BuildQualifiedName(def.ParentQN, def.Element.Name)
-		gc.overloadIndex[key] = append(gc.overloadIndex[key], def)
-	}
-}
-
-// isOverloadKind 判断元素 kind 是否参与重载索引（语言策略注入）。
-func (gc *BaseGlobalContext) isOverloadKind(kind model.ElementKind) bool {
-	_, ok := gc.rules.OverloadKinds[kind]
-	return ok
-}
-
-// replaceDefinitionLocked 用定义替换已登记的声明（保持注册顺序与索引一致）。
-func (gc *BaseGlobalContext) replaceDefinitionLocked(old, def *DefinitionEntry) {
-	for i, d := range gc.definitions {
-		if d == old {
-			gc.definitions[i] = def
-			break
-		}
-	}
-	if gc.isOverloadKind(def.Element.Kind) {
-		key := gc.builder.BuildQualifiedName(def.ParentQN, def.Element.Name)
-		entries := gc.overloadIndex[key]
-		for i, d := range entries {
-			if d == old {
-				entries[i] = def
-				break
+	if replaced != nil {
+		for i, d := range gc.definitions {
+			if d == replaced {
+				gc.definitions[i] = def
+				return
 			}
 		}
 	}
+	gc.definitions = append(gc.definitions, def)
 }
 
-// FindByQualifiedName 按限定名查找定义（O(1)）。
-// 声明条目不覆盖已有定义，故天然「定义优先」；纯声明符号（无定义）也能命中
-// （声明注册时 primaryIndex 无该 QN，会填入声明本身）。
+// FindByQualifiedName 按限定名查找定义（定义优先，由语言索引决定）。
 func (gc *BaseGlobalContext) FindByQualifiedName(qn string) (*DefinitionEntry, bool) {
 	gc.mu.RLock()
 	defer gc.mu.RUnlock()
-	e, ok := gc.primaryIndex[qn]
-	return e, ok
+	return gc.index.FindByQualifiedName(qn)
 }
 
-// FindOverloadCandidates 按不含参数的 QN 查找可重载候选。
+// FindOverloadCandidates 按不含参数的 QN 查找可重载候选（候选 kind 由语言索引决定）。
 func (gc *BaseGlobalContext) FindOverloadCandidates(noParamsQN string) ([]*DefinitionEntry, bool) {
 	gc.mu.RLock()
 	defer gc.mu.RUnlock()
-	entries, ok := gc.overloadIndex[noParamsQN]
-	return entries, ok
+	return gc.index.FindOverloadCandidates(noParamsQN)
 }
 
 // BuildQualifiedName 委托 Builder 拼接 QN。

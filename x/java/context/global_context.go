@@ -16,12 +16,7 @@ type GlobalContext struct {
 // NewGlobalContext 创建 Java 全局上下文。
 func NewGlobalContext(resolver core.SymbolResolver, builder core.SymbolBuilder) core.GlobalContext {
 	return &GlobalContext{
-		BaseGlobalContext: core.NewBaseGlobalContext(resolver, builder, core.GlobalContextRules{
-			// Java 只有方法参与重载消解。
-			OverloadKinds: map[model.ElementKind]struct{}{
-				model.Method: {},
-			},
-		}),
+		BaseGlobalContext: core.NewBaseGlobalContext(resolver, builder, NewDefinitionIndex(builder)),
 	}
 }
 

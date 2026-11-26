@@ -11,6 +11,8 @@ Java 是**首个落地**的语言实现（现与 C/C++ 并存，见 [cpp.md](cpp
 > **上下文接口化影响（2026-11-06）**：`FileContext`/`GlobalContext` 改为接口后，Java 全量实现做了机械适配（字段访问 → 方法调用），**语义不变**，e2e 基线内容不变（仅换行符噪声）。
 >
 > **上下文分层（2026-11-09）**：Java 专属上下文下沉到 `x/java/context`（内嵌 `core.Base*`）。包注册由 `SymbolResolver` 迁入语言 `GlobalContext`；重载索引 kind 改由 `GlobalContextRules.OverloadKinds` 注入（Java 只收 `Method`）。**语义不变**，e2e 基线内容不变（仅换行符噪声）。
+>
+> **索引下沉（2026-11-26）**：`GlobalContextRules` 删除，Java 全局索引改由 `x/java/context.NewDefinitionIndex`（`core.DefinitionIndex` 实现）提供：全量键 `QN|Kind|Path`、主索引裸 QN、重载索引仅 `Method`。**语义不变**。
 
 ## 2. 元素覆盖（CodeElement）
 

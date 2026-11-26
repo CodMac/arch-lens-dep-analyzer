@@ -129,9 +129,11 @@ type GlobalContext interface {
     Builder() SymbolBuilder
 }
 
-// 语言策略注入：core 不再硬编码 kind 集合
-type GlobalContextRules struct {
-    OverloadKinds map[model.ElementKind]struct{}
+// 语言策略注入：索引主键/替换/重载策略由语言实现提供
+type DefinitionIndex interface {
+    Add(def *DefinitionEntry) (replaced *DefinitionEntry, added bool)
+    FindByQualifiedName(qn string) (*DefinitionEntry, bool)
+    FindOverloadCandidates(noParamsQN string) ([]*DefinitionEntry, bool)
 }
 ```
 
@@ -139,9 +141,9 @@ type GlobalContextRules struct {
 
 | 层 | 位置 | 内容 |
 |---|---|---|
-| 契约 | `core/*_context.go` | `FileContext` / `GlobalContext` 接口、`GlobalContextRules`、`ImportInfo` |
-| 通用底座 | `core.BaseFileContext` / `core.BaseGlobalContext` | 索引/锁/去重/声明-定义替换 |
-| 语言实现 | `x/java/context`、`x/cpp/context` | 内嵌 Base + 覆盖 `RegisterFileContext`；Java 实现 `PackageAwareFileContext`；C++ 实现 `NamespaceAware` |
+| 契约 | `core/*_context.go` | `FileContext` / `GlobalContext` / `DefinitionIndex` 接口、`ImportInfo` |
+| 通用底座 | `core.BaseFileContext` / `core.BaseGlobalContext` | 容器与锁；`BaseGlobalContext` 按 `DefinitionIndex` 结果维护定义切片 |
+| 语言实现 | `x/java/context`、`x/cpp/context` | 内嵌 Base + 覆盖 `RegisterFileContext` + 提供 `DefinitionIndex`（索引主键/声明-定义替换/重载 kind）；Java 实现 `PackageAwareFileContext`；C++ 实现 `NamespaceAware` |
 | 编排 | `engine` | 只面向 core 接口；经 `LanguageImpl.NewGlobalContext` 取得语言实现 |
 
 **语言差异收敛点**

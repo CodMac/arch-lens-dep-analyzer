@@ -77,7 +77,7 @@ func (gc *GlobalContext) RegisterFileContext(fc core.FileContext)   // 先注册
 ```
 
 - 语言专属能力用**可选能力接口**表达（`core.PackageAwareFileContext` / `cppctx.NamespaceAware`），core 接口不含语言概念。
-- 重载索引 kind 通过 `core.GlobalContextRules{OverloadKinds: ...}` 注入。
+- 全局索引（主键/声明-定义替换/重载 kind）由语言包提供 `core.DefinitionIndex` 实现，构造 `BaseGlobalContext` 时注入。
 - 语言专属导入属性写入 `ImportInfo.Attrs`（key 带语言前缀）。
 - 在 `LanguageImpl.NewGlobalContext` 中挂载工厂；引擎经该字段创建上下文。
 
@@ -197,19 +197,21 @@ type SourceFile interface {
 | `BaseGlobalContext.primaryIndex` | 裸 `QN` | 「定义优先、纯声明回填」查找语义 |
 | `BaseGlobalContext.overloadIndex` | 去参 `QN` | 仅 C/C++ 需要；Java 只有 Method |
 
-`qnIndex` / `primaryIndex` / `overloadIndex` 及其读写方法（`addDefinitionLocked`、`replaceDefinitionLocked`、`FindOverloadCandidates`）都应从 Base 下沉到语言实现；`GlobalContextRules` 只下沉 `OverloadKinds` 属于「半下沉」，无法表达主键与替换策略差异。
-
-**建议下沉形态**：语言实现注入 `IndexPolicy`——
+**已下沉（2026-11-26）**：`qnIndex` / `primaryIndex` / `overloadIndex` 及 `qnKey` / `replaceDefinitionLocked` / `isOverloadKind` 已从 `core.BaseGlobalContext` 移出，改由语言实现提供 `core.DefinitionIndex`：
 
 ```go
-type IndexPolicy interface {
-    DefinitionKey(def *DefinitionEntry) string   // 全量索引键
-    ShouldReplace(old, new *DefinitionEntry) bool // 声明→定义覆盖
-    OverloadKey(def *DefinitionEntry) (string, bool) // 去参 QN，false 表示不参与
+type DefinitionIndex interface {
+    // added=false 表示同键重复；replaced 非 nil 表示定义原地替换了声明。
+    Add(def *DefinitionEntry) (replaced *DefinitionEntry, added bool)
+    FindByQualifiedName(qn string) (*DefinitionEntry, bool)
+    FindOverloadCandidates(noParamsQN string) ([]*DefinitionEntry, bool)
 }
 ```
 
-Base 只保留 `fileContexts` / `definitions` 容器与锁，索引结构由策略决定。
+- `x/cpp/context/definition_index.go`：全量键 `QN|Kind|Path`、主索引定义优先、重载索引收 Function 族。
+- `x/java/context/definition_index.go`：全量键 `QN|Kind|Path`、重载索引仅 Method。
+- `BaseGlobalContext` 只保留 `fileContexts` / `definitions` 容器与锁；`AddDefinition` 按索引返回的 `replaced` 同步切片顺序，查找方法仅做加锁委托。
+- `GlobalContextRules` 已删除（其唯一字段 `OverloadKinds` 被索引实现取代）。
 
 ### 8.2 文件上下文（`core/file_context.go`）
 
@@ -235,7 +237,7 @@ Base 只保留 `fileContexts` / `definitions` 容器与锁，索引结构由策�
 | G-6 | P3 | `FindOverloadCandidates` 返回内部切片 | 调用方可篡改索引 |
 | G-7 | P3 | 替换与 `qnIndex` 更新耦合 | `addDefinitionLocked` 内手工同步 `qnIndex`/`primaryIndex`/`overloadIndex` 三处，新增索引易漏 |
 | G-8 | P3 | `primaryIndex` 折叠跨文件同名 QN | 折叠后无公开 API 取「全部同名定义」，语言侧无法显式处理歧义 |
-| G-9 | P3 | `GlobalContextRules` 策略不足 | 只有 `OverloadKinds`，无法表达主键/替换/可见性策略 |
+| G-9 | ~~P3~~ 已修复 | `GlobalContextRules` 策略不足 | 只有 `OverloadKinds`，无法表达主键/替换/可见性策略。**修复**：删除 `GlobalContextRules`，由 `DefinitionIndex` 承担键/替换/重载策略 |
 
 ### 8.4 可见性
 
@@ -247,6 +249,6 @@ Base 只保留 `fileContexts` / `definitions` 容器与锁，索引结构由策�
 ### 8.5 修复优先级
 
 - **P0**：G-1（注册顺序确定化：按路径排序注册 + 歧义显式判 nil，禁止「先到先得」）。
-- **P1**：主键与三索引下沉（`IndexPolicy`）、F-1、G-2、G-3、V-1。
+- **P1**：~~主键与三索引下沉~~（已由 `DefinitionIndex` 完成）、~~F-1~~、G-2、G-3、V-1。
 - **P2**：F-3/F-4/F-5、G-4/G-5/G-6、V-2。
 - **P3**：F-6/F-7、G-7/G-8/G-9。
