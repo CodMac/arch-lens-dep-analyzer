@@ -48,7 +48,15 @@ func (r *SymbolResolver) IsPrimitive(typeName string) bool {
 }
 
 // ResolveType 解析类型符号；未找到返回外部实体。
+// 无使用位置，无法区分不同作用域的同名类型；持有节点时请用 ResolveTypeAt。
 func (r *SymbolResolver) ResolveType(gc core.GlobalContext, fc core.FileContext, symbol string, kind model.ElementKind) *model.CodeElement {
+	return r.ResolveTypeAt(gc, fc, nil, symbol, kind)
+}
+
+// ResolveTypeAt 按使用位置解析类型（实现 core.ScopedTypeResolver）。
+// node 为类型出现处的 AST 节点：非限定名先沿词法作用域链查找，
+// 使 namespace B 内的 Foo 命中 B::Foo 而非其它 namespace 的同名类型。
+func (r *SymbolResolver) ResolveTypeAt(gc core.GlobalContext, fc core.FileContext, node coreast.Node, symbol string, kind model.ElementKind) *model.CodeElement {
 	raw := helper.NormalizeTypeText(symbol)
 	if raw == "" || raw == "?" {
 		return nil
@@ -75,7 +83,7 @@ func (r *SymbolResolver) ResolveType(gc core.GlobalContext, fc core.FileContext,
 		return nil
 	}
 
-	if elem := r.lookupType(gc, fc, base); elem != nil {
+	if elem := r.lookupTypeAt(gc, fc, node, base); elem != nil {
 		return elem
 	}
 
@@ -126,7 +134,7 @@ func (r *SymbolResolver) ResolveAction(gc core.GlobalContext, fc core.FileContex
 	case model.Call:
 		// static_cast<T>(x) 等显式转换：语义为 CAST 而非 CALL。
 		if e.form == formCast && e.typeText != "" {
-			return r.ResolveType(gc, fc, e.typeText, model.Class)
+			return r.ResolveTypeAt(gc, fc, e.node, e.typeText, model.Class)
 		}
 		// extractor 传入的是 call_expression 的 function 字段（非整个调用节点），
 		// 此时归一化结果不含实参个数，需从祖先调用节点补齐（重载挑选依赖它）。
@@ -165,7 +173,7 @@ func (r *SymbolResolver) ResolveAction(gc core.GlobalContext, fc core.FileContex
 			return r.resolveExpr(gc, fc, e, wantType)
 		case formCall:
 			// throw T(...)：被调用者是类型名时取类型（临时对象）。
-			if t := r.lookupType(gc, fc, e.name); t != nil {
+			if t := r.lookupTypeAt(gc, fc, e.node, e.name); t != nil {
 				return t
 			}
 			// 兜底：按被调用者全名解析为类型（std::runtime_error(...) 等外部类型）。
@@ -183,7 +191,7 @@ func (r *SymbolResolver) ResolveAction(gc core.GlobalContext, fc core.FileContex
 			if v := r.resolveValue(gc, fc, e); v != nil && v.Extra != nil {
 				for _, key := range []string{constants.VariableTypeWithQN, constants.FieldTypeWithQN} {
 					if raw, ok := v.Extra.Mores[key].(string); ok && raw != "" {
-						return r.ResolveType(gc, fc, raw, model.Class)
+						return r.ResolveTypeAt(gc, fc, e.node, raw, model.Class)
 					}
 				}
 			}
@@ -358,7 +366,7 @@ func (r *SymbolResolver) resolveExpr(gc core.GlobalContext, fc core.FileContext,
 		if e.typeText == "" {
 			return nil
 		}
-		return r.ResolveType(gc, fc, e.typeText, model.Class)
+		return r.ResolveTypeAt(gc, fc, e.node, e.typeText, model.Class)
 
 	case formCall:
 		if want == wantType {
@@ -379,7 +387,7 @@ func (r *SymbolResolver) resolveExpr(gc core.GlobalContext, fc core.FileContext,
 			if e.node != nil {
 				raw = helper.GetNodeContent(e.node, *fc.SourceBytes())
 			}
-			return r.ResolveType(gc, fc, raw, model.Class)
+			return r.ResolveTypeAt(gc, fc, e.node, raw, model.Class)
 		default:
 			return r.resolveValue(gc, fc, e)
 		}
@@ -473,7 +481,7 @@ func (r *SymbolResolver) typeOf(gc core.GlobalContext, fc core.FileContext, e *e
 		if t := r.declaredTypeOf(gc, fc, r.resolveValue(gc, fc, e)); t != nil {
 			return t
 		}
-		return r.lookupType(gc, fc, helper.BaseTypeName(e.name))
+		return r.lookupTypeAt(gc, fc, e.node, helper.BaseTypeName(e.name))
 	}
 	return nil
 }
@@ -548,6 +556,22 @@ func (r *SymbolResolver) declaredTypeOf(gc core.GlobalContext, fc core.FileConte
 // =============================================================================
 // 类型/成员查找
 // =============================================================================
+
+// lookupTypeAt 按使用位置查找类型：非限定名先沿词法作用域链查找，
+// 再退回全局 lookupType（限定名/文件短名/全局短名）。
+func (r *SymbolResolver) lookupTypeAt(gc core.GlobalContext, fc core.FileContext, node coreast.Node, name string) *model.CodeElement {
+	if node != nil && !strings.Contains(name, helper.QNSep) {
+		for _, scope := range r.scopeChain(fc, node) {
+			qn := helper.BuildQN(scope, name)
+			for _, entry := range gc.FindAllByQualifiedName(qn) {
+				if isTypeKind(entry.Element.Kind) {
+					return entry.Element
+				}
+			}
+		}
+	}
+	return r.lookupType(gc, fc, name)
+}
 
 // lookupType 按限定名/短名查找类型元素。
 func (r *SymbolResolver) lookupType(gc core.GlobalContext, fc core.FileContext, name string) *model.CodeElement {

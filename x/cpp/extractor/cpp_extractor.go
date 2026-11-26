@@ -27,6 +27,14 @@ func New(resolver core.SymbolResolver) *Extractor {
 	return &Extractor{resolver: resolver}
 }
 
+// resolveTypeAt 按使用位置解析类型；解析器未实现 ScopedTypeResolver 时退回 ResolveType。
+func (e *Extractor) resolveTypeAt(gc core.GlobalContext, fCtx core.FileContext, node coreast.Node, symbol string) *model.CodeElement {
+	if sr, ok := e.resolver.(core.ScopedTypeResolver); ok {
+		return sr.ResolveTypeAt(gc, fCtx, node, symbol, model.Class)
+	}
+	return e.resolver.ResolveType(gc, fCtx, symbol, model.Class)
+}
+
 // Extract 提取指定文件（相对路径）的全部依赖关系。
 func (e *Extractor) Extract(relPath string, gc core.GlobalContext) ([]*model.DependencyRelation, error) {
 	fCtx, ok := gc.FileContext(relPath)
@@ -211,7 +219,7 @@ func (e *Extractor) extractStructural(fCtx core.FileContext, gc core.GlobalConte
 		if elem.Kind == model.Class || elem.Kind == model.Struct {
 			if supers, ok := mores[constants.ClassSuperClass].([]string); ok {
 				for _, s := range supers {
-					target := e.resolver.ResolveType(gc, fCtx, s, model.Class)
+					target := e.resolveTypeAt(gc, fCtx, entry.Node, s)
 					if target == nil {
 						continue
 					}
@@ -229,22 +237,22 @@ func (e *Extractor) extractStructural(fCtx core.FileContext, gc core.GlobalConte
 
 		// 友元（C++ friend 声明）
 		if elem.Kind == model.Class || elem.Kind == model.Struct {
-			rels = append(rels, e.extractFriendRels(fCtx, gc, elem)...)
+			rels = append(rels, e.extractFriendRels(fCtx, gc, elem, entry.Node)...)
 		}
 
 		// 函数签名（Parameter/Return）
 		if isFunctionKind(elem.Kind) {
-			rels = append(rels, e.extractSignatureRels(fCtx, gc, elem)...)
+			rels = append(rels, e.extractSignatureRels(fCtx, gc, elem, entry.Node)...)
 		}
 
 		// 变量/字段类型（TypeArg + 类型 Use）
-		rels = append(rels, e.extractTypeArgRels(fCtx, gc, elem)...)
+		rels = append(rels, e.extractTypeArgRels(fCtx, gc, elem, entry.Node)...)
 	}
 	return rels
 }
 
 // extractFriendRels 提取 C++ 友元关系：类 → 友元类型 / 友元函数。
-func (e *Extractor) extractFriendRels(fCtx core.FileContext, gc core.GlobalContext, elem *model.CodeElement) []*model.DependencyRelation {
+func (e *Extractor) extractFriendRels(fCtx core.FileContext, gc core.GlobalContext, elem *model.CodeElement, node coreast.Node) []*model.DependencyRelation {
 	if elem.Extra == nil {
 		return nil
 	}
@@ -253,7 +261,7 @@ func (e *Extractor) extractFriendRels(fCtx core.FileContext, gc core.GlobalConte
 
 	if types, ok := mores[constants.ClassFriendTypes].([]string); ok {
 		for _, t := range types {
-			target := e.resolver.ResolveType(gc, fCtx, t, model.Class)
+			target := e.resolveTypeAt(gc, fCtx, node, t)
 			if target == nil {
 				continue
 			}
@@ -301,7 +309,7 @@ func (e *Extractor) resolveFriendFunc(gc core.GlobalContext, fCtx core.FileConte
 }
 
 // extractSignatureRels 提取 Parameter / Return 关系。
-func (e *Extractor) extractSignatureRels(fCtx core.FileContext, gc core.GlobalContext, elem *model.CodeElement) []*model.DependencyRelation {
+func (e *Extractor) extractSignatureRels(fCtx core.FileContext, gc core.GlobalContext, elem *model.CodeElement, node coreast.Node) []*model.DependencyRelation {
 	var rels []*model.DependencyRelation
 	mores := elem.Extra.Mores
 
@@ -320,7 +328,7 @@ func (e *Extractor) extractSignatureRels(fCtx core.FileContext, gc core.GlobalCo
 			}
 			if target == nil {
 				typePart := paramTypeOnly(p)
-				target = e.resolver.ResolveType(gc, fCtx, typePart, model.Class)
+				target = e.resolveTypeAt(gc, fCtx, node, typePart)
 			}
 			// 参数类型不应是 namespace（如 `strm(sock, session)` 的 most-vexing-parse）。
 			if target == nil || target.Kind == model.Namespace {
@@ -339,7 +347,7 @@ func (e *Extractor) extractSignatureRels(fCtx core.FileContext, gc core.GlobalCo
 			target = e.lookupTypeQN(gc, fCtx, qn)
 		}
 		if target == nil {
-			target = e.resolver.ResolveType(gc, fCtx, rt, model.Class)
+			target = e.resolveTypeAt(gc, fCtx, node, rt)
 		}
 		if target != nil && target.Kind != model.Namespace {
 			rels = append(rels, &model.DependencyRelation{
@@ -352,7 +360,7 @@ func (e *Extractor) extractSignatureRels(fCtx core.FileContext, gc core.GlobalCo
 }
 
 // extractTypeArgRels 提取变量/字段的类型依赖（TypeArg）与模板实参。
-func (e *Extractor) extractTypeArgRels(fCtx core.FileContext, gc core.GlobalContext, elem *model.CodeElement) []*model.DependencyRelation {
+func (e *Extractor) extractTypeArgRels(fCtx core.FileContext, gc core.GlobalContext, elem *model.CodeElement, node coreast.Node) []*model.DependencyRelation {
 	var rels []*model.DependencyRelation
 	mores := elem.Extra.Mores
 
@@ -384,7 +392,7 @@ func (e *Extractor) extractTypeArgRels(fCtx core.FileContext, gc core.GlobalCont
 
 	target := e.lookupTypeQN(gc, fCtx, qn)
 	if target == nil {
-		target = e.resolver.ResolveType(gc, fCtx, raw, model.Class)
+		target = e.resolveTypeAt(gc, fCtx, node, raw)
 	}
 	if target == nil || target.Kind == model.Primitive || target.Kind == model.Namespace {
 		return nil
@@ -400,7 +408,7 @@ func (e *Extractor) extractTypeArgRels(fCtx core.FileContext, gc core.GlobalCont
 
 	// 模板实参：Foo<Bar, Baz> 的每个实参。
 	for _, arg := range templateArgs(raw) {
-		at := e.resolver.ResolveType(gc, fCtx, arg, model.Class)
+		at := e.resolveTypeAt(gc, fCtx, node, arg)
 		if at == nil || at.Kind == model.Primitive {
 			continue
 		}
@@ -449,6 +457,14 @@ type actionCtx struct {
 	// sources / scopes 是按文件预构建的区间索引，避免每个动作节点重复扫描全部定义。
 	sources []spanEntry
 	scopes  []spanEntry
+}
+
+// resolveTypeAt 按使用位置解析类型（动作上下文版本）。
+func (ac *actionCtx) resolveTypeAt(node coreast.Node, symbol string) *model.CodeElement {
+	if sr, ok := ac.resolver.(core.ScopedTypeResolver); ok {
+		return sr.ResolveTypeAt(ac.gc, ac.fCtx, node, symbol, model.Class)
+	}
+	return ac.resolver.ResolveType(ac.gc, ac.fCtx, symbol, model.Class)
 }
 
 // spanEntry 是定义元素的字节区间索引项。
@@ -635,7 +651,7 @@ func (ac *actionCtx) emitCallTemplateArgs(source *model.CodeElement, fn coreast.
 			continue
 		}
 		raw := helper.GetNodeContent(arg, *ac.fCtx.SourceBytes())
-		target := ac.resolver.ResolveType(ac.gc, ac.fCtx, raw, model.Class)
+		target := ac.resolveTypeAt(arg, raw)
 		if target == nil || target.Kind == model.Primitive {
 			continue
 		}
@@ -856,7 +872,7 @@ func (ac *actionCtx) handleInit(node coreast.Node) {
 	if typeNode == nil {
 		return
 	}
-	typ := ac.resolver.ResolveType(ac.gc, ac.fCtx, helper.GetNodeContent(typeNode, *ac.fCtx.SourceBytes()), model.Class)
+	typ := ac.resolveTypeAt(typeNode, helper.GetNodeContent(typeNode, *ac.fCtx.SourceBytes()))
 	if typ == nil {
 		return
 	}
@@ -958,7 +974,7 @@ func (ac *actionCtx) declaredTypeOfInit(node coreast.Node) *model.CodeElement {
 	if typeNode == nil {
 		return nil
 	}
-	return ac.resolver.ResolveType(ac.gc, ac.fCtx, helper.GetNodeContent(typeNode, *ac.fCtx.SourceBytes()), model.Class)
+	return ac.resolveTypeAt(typeNode, helper.GetNodeContent(typeNode, *ac.fCtx.SourceBytes()))
 }
 
 // handleUsingDecl 处理 using 声明（using ns::f; / using Base::m;），

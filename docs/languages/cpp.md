@@ -526,7 +526,7 @@ Binder 负责 raw 类型文本 → QN。以下缺陷均经探针实测，按优�
 
 | # | 优先级 | Gap | 实测证据 |
 |---|---|---|---|
-| R-1 | P1 | **ResolveType 无使用作用域** | `namespace B` 内 `struct D : Foo`、`new Foo()`、`(Foo*)p`、`throw Foo()` 均解析到 `A::Foo`（应为 `B::Foo`）；同函数参数因走 Binder WithQN 正确，形成不对称 |
+| R-1 | ~~P1~~ 已修复 | **ResolveType 无使用作用域** | **修复**：新增 `core.ScopedTypeResolver.ResolveTypeAt`，非限定类型先沿词法作用域链查找；Extractor 结构/动作路径与 Resolver 的 `typeOf`/`throw` 均改用它。实测 `B` 内 `D : Foo`、`new Foo()`、`(Foo*)p`、`throw Foo()` 全部命中 `B::Foo`（`TestResolverCppScopedType`） |
 | R-2 | P1 | **`this->` 不按宿主类型解析** | `Derived::f` 中 `this->m()` → `X::m()`、`this->fld` → `X::fld`（同文件另有同名成员的 X 类） |
 | R-3 | P1 | **接收者类型未知时忽略接收者回退非限定查找** | `zz.freeFn(1)`（zz 未声明）→ `freeFn(int)`；`zz.baseField = 1` → `Base::baseField` |
 | R-4 | P2 | **returnTypeOf 不回退外部类型** | `std::string name(); name().size()` → `name()::size` 而非 `std::string::size` |
@@ -558,9 +558,9 @@ Binder 负责 raw 类型文本 → QN。以下缺陷均经探针实测，按优�
 
 - 三层测试 + e2e 黄金回归集，全部位于 `x/cpp/test/`。
 - 测试文件按语言归属拆分：`*_base_test.go`（C/C++ 共享）、`*_c_test.go`（C 独有）、`*_cpp_test.go`（C++ 独有）；共享断言集中在 `assert_helper.go`。
-- e2e 基线：`x/cpp/testdata/e2e/baseline.golden.jsonl`（1677 元素 + 3152 关系，LevelBalanced）。
-- 元素覆盖（基线实测）：FILE 113 / NAMESPACE 59 / CLASS 30 / STRUCT 138 / ENUM 22 / ENUM_CONSTANT 49 / TYPE 42 / MACRO 53 / FIELD 201 / FUNCTION 165 / FUNCTION_DECL 65 / METHOD 86 / METHOD_DECL 97 / VARIABLE 490 / SCOPE_BLOCK 39 / LAMBDA 28。
-- 关系覆盖（基线实测）：CONTAIN 2035 / USE 383 / ASSIGN 192 / TYPE_ARG 131 / CALL 90 / IMPL_LINK 88 / PARAMETER 73 / IMPORT 44 / RETURN 36 / EXTEND 27 / CAPTURE 24 / CAST 14 / CREATE 7 / THROW 6 / FRIEND 2。
+- e2e 基线：`x/cpp/testdata/e2e/baseline.golden.jsonl`（1687 元素 + 3173 关系，LevelBalanced）。
+- 元素覆盖（基线实测）：FILE 114 / NAMESPACE 61 / CLASS 30 / STRUCT 141 / ENUM 22 / ENUM_CONSTANT 49 / TYPE 42 / MACRO 53 / FIELD 203 / FUNCTION 166 / FUNCTION_DECL 65 / METHOD 86 / METHOD_DECL 97 / VARIABLE 491 / SCOPE_BLOCK 39 / LAMBDA 28。
+- 关系覆盖（基线实测）：CONTAIN 2050 / USE 384 / ASSIGN 192 / TYPE_ARG 132 / CALL 90 / IMPL_LINK 88 / PARAMETER 73 / IMPORT 44 / RETURN 36 / EXTEND 28 / CAPTURE 24 / CAST 15 / CREATE 8 / THROW 7 / FRIEND 2。
 - 基线（LevelBalanced）中 PARAMETER/RETURN 大幅减少，是因为当前样例的参数/返回类型多为基本类型（`int`/`void`），被外部符号降噪过滤；CONTAIN/USE/ASSIGN 等指向源码符号的关系不受影响。
 - 测试用例：
   | 测试 | 覆盖 |

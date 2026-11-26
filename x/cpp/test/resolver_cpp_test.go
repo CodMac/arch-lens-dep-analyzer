@@ -546,3 +546,38 @@ func TestResolverChain(t *testing.T) {
 			r.Target.QualifiedName == "Beta::pick()"
 	})
 }
+
+// TestResolverCppScopedType 同名类型按使用位置解析：
+// namespace B 内的 Foo 应命中 B::Foo，而不是其它 namespace 的同名类型。
+func TestResolverCppScopedType(t *testing.T) {
+	paths := ResolvePaths(t, "resolver/cpp/scoped_type", "*.cpp")
+	ec := RunPipeline(t, "x/cpp/testdata", paths, core.LevelRaw)
+
+	cases := []struct {
+		relType model.DependencyType
+		src     string
+	}{
+		{model.Extend, "B::D"},
+		{model.Create, "B::f()"},
+		{model.Cast, "B::f()"},
+		{model.Throw, "B::f()"},
+	}
+	for _, c := range cases {
+		c := c
+		FindRel(t, ec.Relations, func(r *model.DependencyRelation) bool {
+			return r.Type == c.relType && r.Source.QualifiedName == c.src &&
+				r.Target.QualifiedName == "B::Foo"
+		})
+	}
+
+	// 除 a.cpp 自身的 CONTAIN 外，不应有指向 A::Foo 的关系。
+	for _, r := range ec.Relations {
+		if r.Target.QualifiedName != "A::Foo" {
+			continue
+		}
+		if r.Type == model.Contain {
+			continue
+		}
+		t.Errorf("unexpected %s -> A::Foo from %s", r.Type, r.Source.QualifiedName)
+	}
+}

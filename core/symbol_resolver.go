@@ -28,3 +28,12 @@ type SymbolResolver interface {
 	// ResolveAction 统一的动作解析入口：根据动作节点、上下文与关系类型解析目标符号。
 	ResolveAction(gc GlobalContext, fc FileContext, node ast.Node, relType model.DependencyType) *model.CodeElement
 }
+
+// ScopedTypeResolver 是语言可选能力：按使用位置解析类型。
+//
+// ResolveType 只有类型文本、没有使用位置，无法处理「同名类型在不同 namespace/类
+// 作用域内指向不同实体」（C++ 的 B::Foo vs A::Foo）。调用方若持有类型出现处的
+// AST 节点，应优先使用本接口；未实现时退回 SymbolResolver.ResolveType。
+type ScopedTypeResolver interface {
+	ResolveTypeAt(gc GlobalContext, fc FileContext, node ast.Node, symbol string, kind model.ElementKind) *model.CodeElement
+}
