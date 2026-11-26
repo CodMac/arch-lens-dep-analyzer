@@ -477,11 +477,33 @@ func (r *SymbolResolver) typeOf(gc core.GlobalContext, fc core.FileContext, e *e
 		return r.lookupType(gc, fc, helper.BaseTypeName(e.name))
 
 	case formIdent, formMember:
+		// this / *this：静态类型为宿主类（含类外定义的成员函数）。
+		if e.form == formIdent && e.name == "this" {
+			return r.thisType(gc, fc, e.node)
+		}
 		// 裸标识符/成员作接收者时通常是变量（obj.method()），变量优先于同名类型。
 		if t := r.declaredTypeOf(gc, fc, r.resolveValue(gc, fc, e)); t != nil {
 			return t
 		}
 		return r.lookupTypeAt(gc, fc, e.node, helper.BaseTypeName(e.name))
+	}
+	return nil
+}
+
+// thisType 返回 this 的静态类型：宿主类/结构体。
+// 类内成员函数直接取区间包含的类；类外定义（void Derived::f() {...}）按
+// 作用域链上溯到最近的类型元素。
+func (r *SymbolResolver) thisType(gc core.GlobalContext, fc core.FileContext, node coreast.Node) *model.CodeElement {
+	if t := enclosingType(fc, node); t != nil {
+		return t
+	}
+	for _, scope := range r.scopeChain(fc, node) {
+		if scope == "" {
+			break
+		}
+		if t := r.lookupType(gc, fc, scope); t != nil {
+			return t
+		}
 	}
 	return nil
 }
@@ -493,7 +515,7 @@ func (r *SymbolResolver) textType(gc core.GlobalContext, fc core.FileContext, e 
 		return nil
 	}
 	if recv == "this" || recv == "*this" {
-		return enclosingType(fc, e.node)
+		return r.thisType(gc, fc, e.node)
 	}
 	if t := r.lookupType(gc, fc, helper.BaseTypeName(recv)); t != nil {
 		return t

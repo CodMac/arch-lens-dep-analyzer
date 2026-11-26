@@ -581,3 +581,34 @@ func TestResolverCppScopedType(t *testing.T) {
 		t.Errorf("unexpected %s -> A::Foo from %s", r.Type, r.Source.QualifiedName)
 	}
 }
+
+// TestResolverCppThisPtr this-> 按宿主类型与继承链解析（含类外定义）。
+func TestResolverCppThisPtr(t *testing.T) {
+	paths := ResolvePaths(t, "resolver/cpp/this_ptr", "*.cpp")
+	ec := RunPipeline(t, "x/cpp/testdata", paths, core.LevelRaw)
+
+	for _, target := range []string{"Base::baseM()"} {
+		target := target
+		FindRel(t, ec.Relations, func(r *model.DependencyRelation) bool {
+			return r.Type == model.Call && r.Source.QualifiedName == "Derived::f()" &&
+				r.Target.QualifiedName == target
+		})
+	}
+	for _, target := range []string{"Base::baseFld"} {
+		target := target
+		FindRel(t, ec.Relations, func(r *model.DependencyRelation) bool {
+			return r.Type == model.Assign && r.Source.QualifiedName == "Derived::f()" &&
+				r.Target.QualifiedName == target
+		})
+	}
+
+	// 不应误命中同名成员所在的 X 类。
+	for _, r := range ec.Relations {
+		if r.Source.QualifiedName != "Derived::f()" {
+			continue
+		}
+		if r.Target.QualifiedName == "X::baseM()" || r.Target.QualifiedName == "X::baseFld" {
+			t.Errorf("this-> resolved to unrelated X member: %s", r.Target.QualifiedName)
+		}
+	}
+}
