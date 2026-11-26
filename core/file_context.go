@@ -122,8 +122,11 @@ type BaseFileContext struct {
 	// 索引：短名 -> 定义（文件内消歧）。
 	shortNameMap map[string][]*DefinitionEntry
 
-	// 索引：限定名 -> 定义。
-	qualifiedNameMap map[string]*DefinitionEntry
+	// 索引：限定名 -> 定义列表。
+	// 同 QN 可对应多个 Kind（C/C++ 的 FUNCTION/FUNCTION_DECL、METHOD/METHOD_DECL），
+	// 单值映射会让后注册者覆盖先注册者，查找结果随注册顺序变化；列表保留全部条目，
+	// FindByQualifiedName 再按「定义优先」挑选。
+	qualifiedNameMap map[string][]*DefinitionEntry
 
 	// 索引：元素 kind -> 定义。
 	kindMap map[model.ElementKind][]*DefinitionEntry
@@ -141,7 +144,7 @@ func NewBaseFileContext(filePath string, root coreast.Node, sourceBytes *[]byte)
 		sourceBytes:      sourceBytes,
 		definitions:      make([]*DefinitionEntry, 0),
 		shortNameMap:     make(map[string][]*DefinitionEntry),
-		qualifiedNameMap: make(map[string]*DefinitionEntry),
+		qualifiedNameMap: make(map[string][]*DefinitionEntry),
 		kindMap:          make(map[model.ElementKind][]*DefinitionEntry),
 		declDefIndex:     make(map[string]int),
 	}
@@ -192,7 +195,14 @@ func (fc *BaseFileContext) AddDefinition(def *DefinitionEntry) {
 					}
 				}
 			}
-			fc.qualifiedNameMap[def.Element.QualifiedName] = def
+			if list := fc.qualifiedNameMap[def.Element.QualifiedName]; list != nil {
+				for i, d := range list {
+					if d == old {
+						list[i] = def
+						break
+					}
+				}
+			}
 		}
 		return
 	}
@@ -202,7 +212,7 @@ func (fc *BaseFileContext) AddDefinition(def *DefinitionEntry) {
 	fc.declDefIndex[key] = len(fc.definitions)
 	fc.definitions = append(fc.definitions, def)
 	fc.shortNameMap[def.Element.Name] = append(fc.shortNameMap[def.Element.Name], def)
-	fc.qualifiedNameMap[def.Element.QualifiedName] = def
+	fc.qualifiedNameMap[def.Element.QualifiedName] = append(fc.qualifiedNameMap[def.Element.QualifiedName], def)
 	fc.kindMap[def.Element.Kind] = append(fc.kindMap[def.Element.Kind], def)
 }
 
@@ -220,10 +230,20 @@ func (fc *BaseFileContext) FindByShortName(name string) ([]*DefinitionEntry, boo
 	return entries, ok
 }
 
-// FindByQualifiedName 按限定名返回定义。
+// FindByQualifiedName 按限定名返回定义（同 QN 多条目时定义优先）。
+// 同 QN 可能对应 FUNCTION 与 FUNCTION_DECL 等多个条目：优先返回非声明条目，
+// 纯声明符号（无对应定义）仍可命中。
 func (fc *BaseFileContext) FindByQualifiedName(qn string) (*DefinitionEntry, bool) {
-	entry, ok := fc.qualifiedNameMap[qn]
-	return entry, ok
+	entries, ok := fc.qualifiedNameMap[qn]
+	if !ok || len(entries) == 0 {
+		return nil, false
+	}
+	for _, e := range entries {
+		if !e.IsDeclaration {
+			return e, true
+		}
+	}
+	return entries[0], true
 }
 
 // FindByKind 按元素类型返回定义。

@@ -215,7 +215,7 @@ Base 只保留 `fileContexts` / `definitions` 容器与锁，索引结构由策�
 
 | # | 优先级 | Gap | 说明 |
 |---|---|---|---|
-| F-1 | P1 | `qualifiedNameMap` 只按 QN 索引 | 与 `declDefIndex` 的 `QN+Kind` 不一致：C++ 同 QN 不同 Kind（`FUNCTION` / `FUNCTION_DECL`）时后者覆盖前者，`FindByQualifiedName` 只能命中一个，另一 Kind 不可达 |
+| F-1 | ~~P1~~ 已修复 | `qualifiedNameMap` 只按 QN 索引 | 与 `declDefIndex` 的 `QN+Kind` 不一致：C++ 同 QN 不同 Kind（`FUNCTION` / `FUNCTION_DECL`）时后者覆盖前者，查找结果随注册顺序变化。**修复**：改存 `QN -> []*DefinitionEntry`，`FindByQualifiedName` 定义优先（`core/file_context_test.go` 回归） |
 | F-2 | P1 | 声明/定义替换语义在 core | `AddDefinition` 内 `old.IsDeclaration && !def.IsDeclaration` 是 C/C++ 语义，Java 无此概念 |
 | F-3 | P2 | `PackageAwareFileContext` 在 core | 单包语义能力接口放在 core，而多命名空间的 `NamespaceAware` 在 `x/cpp`，同类能力两种归属 |
 | F-4 | P2 | `DefinitionEntry.IsDeclaration` 在 core | 声明/定义双元素是 C/C++ 概念，Java 恒 false |
