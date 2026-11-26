@@ -47,6 +47,25 @@ type NamespaceAware interface {
 	SetNamespaces(ns []string)
 }
 
+// UsingAware 是 C/C++ 专属的可选能力接口：
+// 记录 using 声明（using ns::f;）与命名空间别名（namespace na = ns;），
+// 供 Resolver 在非限定名解析时优先命中被引入的符号。
+type UsingAware interface {
+	core.FileContext
+
+	// UsingAlias 返回 using 声明引入的短名对应的目标限定名。
+	UsingAlias(name string) (string, bool)
+
+	// AddUsingAlias 记录一条 using 声明。
+	AddUsingAlias(name, target string)
+
+	// NamespaceAlias 返回命名空间别名对应的目标命名空间名。
+	NamespaceAlias(alias string) (string, bool)
+
+	// AddNamespaceAlias 记录一条命名空间别名。
+	AddNamespaceAlias(alias, target string)
+}
+
 // ActionRoots 汇总动作提取需要遍历的全部语法树根节点。
 //
 // 条件编译投影只保留每组一个分支，投影树无法覆盖 #elif/#else 与嵌套分支；
@@ -69,6 +88,9 @@ type FileContext struct {
 
 	namespaces  []string
 	actionRoots ActionRoots
+
+	usingAliases     map[string]string
+	namespaceAliases map[string]string
 }
 
 // NewFileContext 创建 C/C++ 文件上下文。
@@ -85,6 +107,34 @@ func (fc *FileContext) Namespaces() []string { return fc.namespaces }
 
 // SetNamespaces 设置命名空间列表。
 func (fc *FileContext) SetNamespaces(ns []string) { fc.namespaces = ns }
+
+// UsingAlias 返回 using 声明引入的短名对应的目标限定名。
+func (fc *FileContext) UsingAlias(name string) (string, bool) {
+	t, ok := fc.usingAliases[name]
+	return t, ok
+}
+
+// AddUsingAlias 记录一条 using 声明。
+func (fc *FileContext) AddUsingAlias(name, target string) {
+	if fc.usingAliases == nil {
+		fc.usingAliases = make(map[string]string)
+	}
+	fc.usingAliases[name] = target
+}
+
+// NamespaceAlias 返回命名空间别名对应的目标命名空间名。
+func (fc *FileContext) NamespaceAlias(alias string) (string, bool) {
+	t, ok := fc.namespaceAliases[alias]
+	return t, ok
+}
+
+// AddNamespaceAlias 记录一条命名空间别名。
+func (fc *FileContext) AddNamespaceAlias(alias, target string) {
+	if fc.namespaceAliases == nil {
+		fc.namespaceAliases = make(map[string]string)
+	}
+	fc.namespaceAliases[alias] = target
+}
 
 // SetActionRoots 设置动作提取需要遍历的语法树根节点。
 func (fc *FileContext) SetActionRoots(r ActionRoots) { fc.actionRoots = r }

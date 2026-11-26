@@ -483,6 +483,14 @@ func (r *SymbolResolver) typeOf(gc core.GlobalContext, fc core.FileContext, e *e
 		return r.textType(gc, fc, e)
 
 	case formScoped:
+		// 命名空间别名接收者（na::sub）：展开别名后按限定名查找。
+		if e.recv != nil && e.recv.form == formIdent {
+			if target := namespaceAliasTarget(fc, e.recv.name); target != "" {
+				if t := r.lookupType(gc, fc, helper.BuildQN(target, e.name)); t != nil {
+					return t
+				}
+			}
+		}
 		// A::B 先按完整限定名当类型（namespace/嵌套类），再按成员变量。
 		if e.node != nil {
 			if t := r.lookupType(gc, fc, helper.BaseTypeName(helper.GetNodeContent(e.node, *fc.SourceBytes()))); t != nil {
@@ -498,6 +506,14 @@ func (r *SymbolResolver) typeOf(gc core.GlobalContext, fc core.FileContext, e *e
 		// this / *this：静态类型为宿主类（含类外定义的成员函数）。
 		if e.form == formIdent && e.name == "this" {
 			return r.thisType(gc, fc, e.node)
+		}
+		// 命名空间别名（namespace na = ns; na::f()）解析为目标命名空间。
+		if e.form == formIdent {
+			if target := namespaceAliasTarget(fc, e.name); target != "" {
+				if t := r.lookupType(gc, fc, target); t != nil {
+					return t
+				}
+			}
 		}
 		// 裸标识符/成员作接收者时通常是变量（obj.method()），变量优先于同名类型。
 		if t := r.declaredTypeOf(gc, fc, r.resolveValue(gc, fc, e)); t != nil {
@@ -604,11 +620,39 @@ func (r *SymbolResolver) declaredTypeOf(gc core.GlobalContext, fc core.FileConte
 // 类型/成员查找
 // =============================================================================
 
+// usingTarget 返回 using 声明引入的短名对应的目标限定名。
+func usingTarget(fc core.FileContext, name string) string {
+	if ua, ok := fc.(cppctx.UsingAware); ok {
+		if t, found := ua.UsingAlias(name); found {
+			return t
+		}
+	}
+	return ""
+}
+
+// namespaceAliasTarget 返回命名空间别名对应的目标命名空间名。
+func namespaceAliasTarget(fc core.FileContext, name string) string {
+	if ua, ok := fc.(cppctx.UsingAware); ok {
+		if t, found := ua.NamespaceAlias(name); found {
+			return t
+		}
+	}
+	return ""
+}
+
 // lookupTypeAt 按使用位置查找类型：非限定名先沿词法作用域链查找，
 // 再退回全局 lookupType（限定名/文件短名/全局短名）。
 func (r *SymbolResolver) lookupTypeAt(gc core.GlobalContext, fc core.FileContext, node coreast.Node, name string) *model.CodeElement {
 	if node != nil && !strings.Contains(name, helper.QNSep) {
 		for _, scope := range r.scopeChain(fc, node) {
+			// using 声明在声明所在作用域引入符号，优先于全局作用域（空 scope）。
+			if scope == "" {
+				if target := usingTarget(fc, name); target != "" && target != name {
+					if t := r.lookupTypeAt(gc, fc, node, target); t != nil {
+						return t
+					}
+				}
+			}
 			qn := helper.BuildQN(scope, name)
 			for _, entry := range gc.FindAllByQualifiedName(qn) {
 				if isTypeKind(entry.Element.Kind) {
@@ -860,6 +904,14 @@ func (r *SymbolResolver) lookupLocalVariable(gc core.GlobalContext, fc core.File
 // lookupScopedSymbol 沿作用域链查找变量/字段/枚举常量。
 func (r *SymbolResolver) lookupScopedSymbol(gc core.GlobalContext, fc core.FileContext, node coreast.Node, name string) *model.CodeElement {
 	for _, scope := range r.scopeChain(fc, node) {
+		// using 声明在声明所在作用域引入符号，优先于全局作用域（空 scope）。
+		if scope == "" {
+			if target := usingTarget(fc, name); target != "" && target != name {
+				if elem := r.lookupScopedSymbol(gc, fc, node, target); elem != nil {
+					return elem
+				}
+			}
+		}
 		qn := helper.BuildQN(scope, name)
 		for _, entry := range gc.FindAllByQualifiedName(qn) {
 			switch entry.Element.Kind {
@@ -905,6 +957,14 @@ func isGlobalVariable(e *model.CodeElement) bool {
 // lookupScopedFunc 沿作用域链查找函数/方法。
 func (r *SymbolResolver) lookupScopedFunc(gc core.GlobalContext, fc core.FileContext, node coreast.Node, name string, argCount int) *model.CodeElement {
 	for _, scope := range r.scopeChain(fc, node) {
+		// using 声明在声明所在作用域引入符号，优先于全局作用域（空 scope）。
+		if scope == "" {
+			if target := usingTarget(fc, name); target != "" && target != name {
+				if elem := r.lookupScopedFunc(gc, fc, node, target, argCount); elem != nil {
+					return elem
+				}
+			}
+		}
 		qn := helper.BuildQN(scope, name)
 		if entries, ok := gc.FindOverloadCandidates(qn); ok {
 			if e := pickOverload(entries, argCount); e != nil {

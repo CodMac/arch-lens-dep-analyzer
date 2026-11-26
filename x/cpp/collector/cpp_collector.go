@@ -565,6 +565,16 @@ func (c *Collector) collectBasicDefinitions(node coreast.Node, fCtx core.FileCon
 		return
 	}
 
+	// using 声明 / 命名空间别名：记录到文件上下文，供 Resolver 解析非限定名。
+	if node.Kind() == "using_declaration" {
+		c.collectUsingDeclaration(node, fCtx)
+		return
+	}
+	if node.Kind() == "namespace_alias_definition" {
+		c.collectNamespaceAlias(node, fCtx)
+		return
+	}
+
 	// C++17 嵌套 namespace（namespace a::b::c）：为每个前缀创建真实 namespace 元素，
 	// 否则只产最内层元素，层级边缺失且 Namespace→File 指向不存在的中间层。
 	if node.Kind() == "namespace_definition" && c.collectNestedNamespace(node, fCtx, currentQN, tmplParams) {
@@ -626,6 +636,56 @@ func (c *Collector) collectBasicDefinitions(node coreast.Node, fCtx core.FileCon
 	for i := 0; i < node.ChildCount(); i++ {
 		c.collectBasicDefinitions(node.Child(i), fCtx, currentQN, tmplParams, occurrences)
 	}
+}
+
+// collectUsingDeclaration 记录 `using ns::name;` 引入的短名与目标限定名。
+func (c *Collector) collectUsingDeclaration(node coreast.Node, fCtx core.FileContext) {
+	ua, ok := fCtx.(cppctx.UsingAware)
+	if !ok {
+		return
+	}
+	src := *fCtx.SourceBytes()
+	var qual coreast.Node
+	for i := 0; i < node.NamedChildCount(); i++ {
+		if ch := node.NamedChild(i); ch != nil && ch.Kind() == "qualified_identifier" {
+			qual = ch
+			break
+		}
+	}
+	if qual == nil {
+		return
+	}
+	nameNode := qual.ChildByFieldName("name")
+	if nameNode == nil {
+		return
+	}
+	name := strings.TrimSpace(nameNode.Utf8Text(src))
+	target := strings.TrimSpace(qual.Utf8Text(src))
+	if name == "" || target == "" {
+		return
+	}
+	ua.AddUsingAlias(name, target)
+}
+
+// collectNamespaceAlias 记录 `namespace alias = target;` 的命名空间别名。
+func (c *Collector) collectNamespaceAlias(node coreast.Node, fCtx core.FileContext) {
+	ua, ok := fCtx.(cppctx.UsingAware)
+	if !ok {
+		return
+	}
+	src := *fCtx.SourceBytes()
+	var ids []string
+	for i := 0; i < node.NamedChildCount(); i++ {
+		ch := node.NamedChild(i)
+		if ch == nil || ch.Kind() != "namespace_identifier" {
+			continue
+		}
+		ids = append(ids, strings.TrimSpace(ch.Utf8Text(src)))
+	}
+	if len(ids) < 2 || ids[0] == "" || ids[1] == "" {
+		return
+	}
+	ua.AddNamespaceAlias(ids[0], ids[1])
 }
 
 // anonymousStructCarriers 判定节点是否为「匿名 struct/union 的承载声明」，

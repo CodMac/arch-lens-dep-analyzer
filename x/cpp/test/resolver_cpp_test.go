@@ -636,6 +636,45 @@ func TestResolverCppUnknownReceiver(t *testing.T) {
 	})
 }
 
+// TestResolverCppUsingAlias using 声明与命名空间别名参与解析：
+// 非限定名优先命中 using 引入的目标，na::f() 按别名目标命名空间解析。
+func TestResolverCppUsingAlias(t *testing.T) {
+	paths := ResolvePaths(t, "resolver/cpp/using_alias", "*.cpp")
+	ec := RunPipeline(t, "x/cpp/testdata", paths, core.LevelRaw)
+
+	// using ns2::f; f(1) → ns2::f(int)（而非同文件 ns1::f）
+	FindRel(t, ec.Relations, func(r *model.DependencyRelation) bool {
+		return r.Type == model.Call && r.Source.QualifiedName == "u1::call()" &&
+			r.Target.QualifiedName == "ns2::f(int)"
+	})
+	// using ns2::v; v = 2 → ns2::v
+	FindRel(t, ec.Relations, func(r *model.DependencyRelation) bool {
+		return r.Type == model.Assign && r.Source.QualifiedName == "u1::setv()" &&
+			r.Target.QualifiedName == "ns2::v"
+	})
+	// using ns2::T; T t → ns2::T（变量类型依赖）
+	FindRel(t, ec.Relations, func(r *model.DependencyRelation) bool {
+		return r.Type == model.TypeArg && r.Source.QualifiedName == "u2::mk()::t" &&
+			r.Target.QualifiedName == "ns2::T"
+	})
+	// namespace na = ns2; na::f(1) → ns2::f(int)
+	FindRel(t, ec.Relations, func(r *model.DependencyRelation) bool {
+		return r.Type == model.Call && r.Source.QualifiedName == "useAlias()" &&
+			r.Target.QualifiedName == "ns2::f(int)"
+	})
+
+	// 不应误命中 ns1 的同名符号。
+	for _, r := range ec.Relations {
+		if r.Target.QualifiedName == "ns1::f(int)" || r.Target.QualifiedName == "ns1::v" ||
+			r.Target.QualifiedName == "ns1::T" {
+			if r.Type == model.Contain {
+				continue
+			}
+			t.Errorf("unexpected %s -> %s from %s", r.Type, r.Target.QualifiedName, r.Source.QualifiedName)
+		}
+	}
+}
+
 // TestResolverCppReturnExternalChain 返回类型链式调用：外部返回类型按外部
 // 类型归属接收者，源码内返回类型仍按源码类型解析。
 func TestResolverCppReturnExternalChain(t *testing.T) {

@@ -14,6 +14,7 @@ import (
 	"github.com/CodMac/arch-lens-dep-analyzer/core"
 	"github.com/CodMac/arch-lens-dep-analyzer/model"
 	"github.com/CodMac/arch-lens-dep-analyzer/x/cpp/constants"
+	cppctx "github.com/CodMac/arch-lens-dep-analyzer/x/cpp/context"
 	"github.com/CodMac/arch-lens-dep-analyzer/x/cpp/helper"
 )
 
@@ -111,6 +112,14 @@ func (b *Binder) resolveToQN(gc core.GlobalContext, fCtx core.FileContext, owner
 	base = b.expandAlias(gc, fCtx, ownerQN, base, 8)
 	if base == "" {
 		return rawType
+	}
+	// using 声明引入的类型（using ns::Type; Type x;）：按目标限定名解析。
+	if !strings.Contains(base, helper.QNSep) {
+		if ua, ok := fCtx.(cppctx.UsingAware); ok {
+			if target, found := ua.UsingAlias(base); found && target != "" {
+				base = target
+			}
+		}
 	}
 	if b.resolver.IsPrimitive(base) {
 		return base
