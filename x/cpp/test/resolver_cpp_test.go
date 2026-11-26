@@ -774,3 +774,25 @@ func TestResolverCppReturnExternalChain(t *testing.T) {
 			r.Target.QualifiedName == "ret::Svc::run()" && !r.Target.IsFormExternal
 	})
 }
+
+// TestResolverCppSameNameCrossFile 跨文件同名类型必须解析到本文件定义：
+// a.cpp/b.cpp 各自定义 SncfDup，TYPE_ARG 目标 Path 应指向各自文件。
+func TestResolverCppSameNameCrossFile(t *testing.T) {
+	paths := ResolvePaths(t, "resolver/cpp/same_name_cross_file", "*.cpp")
+	_, rels := RunExtraction(t, "x/cpp/testdata", paths)
+
+	for _, tc := range []struct{ fn, file string }{
+		{"sncf_use_a", "resolver/cpp/same_name_cross_file/a.cpp"},
+		{"sncf_use_b", "resolver/cpp/same_name_cross_file/b.cpp"},
+	} {
+		r := FindRel(t, rels, func(r *model.DependencyRelation) bool {
+			return r.Type == model.TypeArg && r.Source.QualifiedName == tc.fn+"()::d"
+		})
+		if r.Target.QualifiedName != "SncfDup" {
+			t.Errorf("%s TYPE_ARG target QN = %q, want SncfDup", tc.fn, r.Target.QualifiedName)
+		}
+		if r.Target.Path != tc.file {
+			t.Errorf("%s TYPE_ARG target Path = %q, want %q (同文件定义优先)", tc.fn, r.Target.Path, tc.file)
+		}
+	}
+}

@@ -433,6 +433,14 @@ func (e *Extractor) lookupTypeQN(gc core.GlobalContext, fCtx core.FileContext, q
 	if qn == "" {
 		return nil
 	}
+	// 本文件内定义优先，避免跨文件同名 QN（多个样例各自定义 Color/Node/Widget）
+	// 命中其它文件的类型。
+	if entry, ok := fCtx.FindByQualifiedName(qn); ok {
+		switch entry.Element.Kind {
+		case model.Class, model.Struct, model.Enum, model.Type:
+			return entry.Element
+		}
+	}
 	if entry, ok := gc.FindByQualifiedName(qn); ok {
 		if helper.IsTypeVariable(qn) && entry.Element.Path != fCtx.FilePath() {
 			return nil

@@ -3,7 +3,7 @@
 > 适用范围：`x/cpp/` · 与 [qn-format.md](../qn-format.md)（QN 契约）、[language-extension.md](../language-extension.md)（SPI 契约）互为补充
 >
 > 本文档回答「C/C++ 支持到什么程度」：元素/关系覆盖清单、声明-实现配对模型、条件编译策略、实现边界与已知限制。
-> 行为契约由 `x/cpp/testdata/e2e/baseline.golden.jsonl`（5263 行 = 1911 元素 + 3352 关系，LevelBalanced）锚定。
+> 行为契约由 `x/cpp/testdata/e2e/baseline.golden.jsonl`（5286 行 = 1921 元素 + 3365 关系，LevelBalanced）锚定。
 
 ## 1. 总体状态
 
@@ -458,6 +458,7 @@ type expr struct {
 | **EXTEND 自环** | 模板偏特化 `struct X : X<T,...>` 产自环 | 基类 QN 与自身相同时跳过 |
 | **PARAMETER 目标是 namespace** | 参数类型 QN 命中 namespace | `lookupTypeQN` 不再接受 Namespace |
 | **跨文件局部变量误命中** | `std::runtime_error` 的 `std` 被解析为别的文件里的局部变量 `std` | 全局短名兜底仅接受 `cpp.variable.is_global=true` 的变量与枚举常量 |
+| **跨文件同名类型/符号误命中** | 多个样例各自定义 `Color`/`Node`/`Widget`/`Holder` 时，TYPE_ARG/PARAMETER/RETURN/USE 解析到其它文件的同名 QN（审计实测 37 条） | 解析器作用域链（类型/变量/函数/成员）与 `lookupTypeQN` 增加「本文件内同作用域定义优先」；`lookupType` 非限定名先查本文件全局作用域同名条目 |
 | **宏语句致 QN 残影** | Unity 的 `EXPECT_ABORT_BEGIN`/`VERIFY_FAILS_END` 独占一行且未展开，C 语法把 `MACRO FN(...)` 解析成声明，QN 含 `;`/`}`/换行（cJSON 102 条） | `preproc.normalizeStatementMacros`：把「整行只有对象式宏名」的行置空，恢复为普通语句/空语句，真实函数得以正确解析 |
 | **多行类型注解宏未归一化** | `class GTEST_API_ Foo\n    : public Bar {` 的 `:` 在下一行，旧正则不匹配，`GTEST_API_` 未置空 → 类被解析成跨 2000 行的函数，并派生伪 namespace | 类型宏正则允许 `:`/`{` 出现在下一行（`[ \t]*(?:\r?\n[ \t]*)?`） |
 | **行首可见性宏与返回类型粘连** | `GTEST_NO_INLINE_ GTEST_NO_TAIL_CALL_ std::string\nGetCurrent...(...)` 未置空，被解析成带 ERROR 的 qualified_identifier，QN 混入 `\r`（httplib 3 条） | `preproc.blankLeadingObjectMacros`：行首连续对象式宏后紧跟内置类型或 `X::` 限定类型时全部置空；宏定义在被包含的头文件（本文件无 `#define`）时按「全大写且含下划线」的宏名形态识别 |
@@ -558,9 +559,9 @@ Binder 负责 raw 类型文本 → QN。以下缺陷均经探针实测，按优�
 
 - 三层测试 + e2e 黄金回归集，全部位于 `x/cpp/test/`。
 - 测试文件按语言归属拆分：`*_base_test.go`（C/C++ 共享）、`*_c_test.go`（C 独有）、`*_cpp_test.go`（C++ 独有）；共享断言集中在 `assert_helper.go`。
-- e2e 基线：`x/cpp/testdata/e2e/baseline.golden.jsonl`（1911 元素 + 3352 关系，LevelBalanced）。元素条目含 `Path`，去重键为 `QN|Kind|Path`，跨文件同 QN 不再互相覆盖。
-- 元素覆盖（基线实测）：FILE 124 / NAMESPACE 96 / CLASS 32 / STRUCT 164 / ENUM 31 / ENUM_CONSTANT 67 / TYPE 61 / MACRO 57 / FIELD 230 / FUNCTION 190 / FUNCTION_DECL 75 / METHOD 89 / METHOD_DECL 102 / VARIABLE 526 / SCOPE_BLOCK 39 / LAMBDA 28。
-- 关系覆盖（基线实测）：CONTAIN 2160 / USE 419 / ASSIGN 197 / TYPE_ARG 144 / CALL 99 / IMPL_LINK 89 / PARAMETER 75 / IMPORT 46 / RETURN 38 / EXTEND 29 / CAPTURE 24 / CAST 15 / CREATE 8 / THROW 7 / FRIEND 2。
+- e2e 基线：`x/cpp/testdata/e2e/baseline.golden.jsonl`（1921 元素 + 3365 关系，LevelBalanced）。元素条目含 `Path`，去重键为 `QN|Kind|Path`，跨文件同 QN 不再互相覆盖。
+- 元素覆盖（基线实测）：FILE 126 / NAMESPACE 96 / CLASS 32 / STRUCT 166 / ENUM 31 / ENUM_CONSTANT 67 / TYPE 61 / MACRO 57 / FIELD 232 / FUNCTION 192 / FUNCTION_DECL 75 / METHOD 89 / METHOD_DECL 102 / VARIABLE 528 / SCOPE_BLOCK 39 / LAMBDA 28。
+- 关系覆盖（基线实测）：CONTAIN 2168 / USE 421 / ASSIGN 197 / TYPE_ARG 146 / CALL 99 / IMPL_LINK 89 / PARAMETER 76 / IMPORT 46 / RETURN 38 / EXTEND 29 / CAPTURE 24 / CAST 15 / CREATE 8 / THROW 7 / FRIEND 2。
 - 基线（LevelBalanced）中 PARAMETER/RETURN 大幅减少，是因为当前样例的参数/返回类型多为基本类型（`int`/`void`），被外部符号降噪过滤；CONTAIN/USE/ASSIGN 等指向源码符号的关系不受影响。
 - 测试用例：
   | 测试 | 覆盖 |

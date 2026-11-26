@@ -673,6 +673,12 @@ func (r *SymbolResolver) lookupTypeAt(gc core.GlobalContext, fc core.FileContext
 				}
 			}
 			qn := helper.BuildQN(scope, name)
+			// 本文件内同作用域定义优先，避免命中其它文件的同名类型。
+			for _, e := range localEntriesInScope(fc, scope, name) {
+				if isTypeKind(e.Element.Kind) {
+					return e.Element
+				}
+			}
 			for _, entry := range gc.FindAllByQualifiedName(qn) {
 				if isTypeKind(entry.Element.Kind) {
 					return entry.Element
@@ -685,6 +691,15 @@ func (r *SymbolResolver) lookupTypeAt(gc core.GlobalContext, fc core.FileContext
 
 // lookupType 按限定名/短名查找类型元素。
 func (r *SymbolResolver) lookupType(gc core.GlobalContext, fc core.FileContext, name string) *model.CodeElement {
+	// 非限定名：本文件内同作用域（全局）定义优先，避免跨文件同名类型互相污染。
+	// 仅取 QN 恰为 name 的条目，排除本文件里 namespace 内的同名类型。
+	if !strings.Contains(name, helper.QNSep) {
+		for _, e := range localEntriesInScope(fc, "", name) {
+			if isTypeKind(e.Element.Kind) {
+				return e.Element
+			}
+		}
+	}
 	for _, entry := range gc.FindAllByQualifiedName(name) {
 		if isTypeKind(entry.Element.Kind) {
 			return entry.Element
@@ -723,6 +738,23 @@ func (r *SymbolResolver) lookupType(gc core.GlobalContext, fc core.FileContext, 
 	return nil
 }
 
+// localEntriesInScope 返回本文件内属于指定作用域 scope、短名为 name 的全部条目。
+// 用于在作用域链查找时优先命中同文件定义，避免跨文件同名 QN 互相污染。
+func localEntriesInScope(fc core.FileContext, scope, name string) []*core.DefinitionEntry {
+	entries, ok := fc.FindByShortName(name)
+	if !ok {
+		return nil
+	}
+	qn := helper.BuildQN(scope, name)
+	var out []*core.DefinitionEntry
+	for _, e := range entries {
+		if helper.BuildQN(e.ParentQN, e.Element.Name) == qn {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
 // sortedByQN 返回按限定名排序的副本，消除跨文件同名符号对注册顺序的依赖。
 func sortedByQN(defs []*core.DefinitionEntry) []*core.DefinitionEntry {
 	out := append([]*core.DefinitionEntry(nil), defs...)
@@ -736,6 +768,13 @@ func sortedByQN(defs []*core.DefinitionEntry) []*core.DefinitionEntry {
 func (r *SymbolResolver) lookupMember(gc core.GlobalContext, fc core.FileContext, owner *model.CodeElement, name string) *model.CodeElement {
 	for _, o := range r.typeChain(gc, fc, owner, 0) {
 		qn := helper.BuildQN(o.QualifiedName, name)
+		// 本文件内成员优先，避免跨文件同名类型的成员互相污染。
+		for _, e := range localEntriesInScope(fc, o.QualifiedName, name) {
+			switch e.Element.Kind {
+			case model.Field, model.Variable, model.EnumConstant:
+				return e.Element
+			}
+		}
 		for _, entry := range gc.FindAllByQualifiedName(qn) {
 			switch entry.Element.Kind {
 			case model.Field, model.Variable, model.EnumConstant:
@@ -749,6 +788,18 @@ func (r *SymbolResolver) lookupMember(gc core.GlobalContext, fc core.FileContext
 // lookupMemberFunc 在类型（含基类）中查找方法。
 func (r *SymbolResolver) lookupMemberFunc(gc core.GlobalContext, fc core.FileContext, owner *model.CodeElement, name string, argCount int) *model.CodeElement {
 	for _, o := range r.typeChain(gc, fc, owner, 0) {
+		// 本文件内成员函数优先。
+		var localFuncs []*core.DefinitionEntry
+		for _, e := range localEntriesInScope(fc, o.QualifiedName, name) {
+			if isFunctionKind(e.Element.Kind) {
+				localFuncs = append(localFuncs, e)
+			}
+		}
+		if len(localFuncs) > 0 {
+			if e := pickOverload(localFuncs, argCount); e != nil {
+				return e.Element
+			}
+		}
 		qn := helper.BuildQN(o.QualifiedName, name)
 		if entries, ok := gc.FindOverloadCandidates(qn); ok {
 			if e := pickOverload(entries, argCount); e != nil {
@@ -919,6 +970,12 @@ func enclosingScope(fc core.FileContext, node coreast.Node) *model.CodeElement {
 // 用于判定「被调用者其实是局部可调用对象」，避免误产外部函数。
 func (r *SymbolResolver) lookupLocalVariable(gc core.GlobalContext, fc core.FileContext, node coreast.Node, name string) *model.CodeElement {
 	for _, scope := range r.scopeChain(fc, node) {
+		// 本文件内同作用域局部变量优先。
+		for _, e := range localEntriesInScope(fc, scope, name) {
+			if e.Element.Kind == model.Variable {
+				return e.Element
+			}
+		}
 		qn := helper.BuildQN(scope, name)
 		for _, entry := range gc.FindAllByQualifiedName(qn) {
 			if entry.Element.Kind == model.Variable {
@@ -941,6 +998,13 @@ func (r *SymbolResolver) lookupScopedSymbol(gc core.GlobalContext, fc core.FileC
 			}
 		}
 		qn := helper.BuildQN(scope, name)
+		// 本文件内同作用域定义优先，避免命中其它文件的同名变量/字段/常量。
+		for _, e := range localEntriesInScope(fc, scope, name) {
+			switch e.Element.Kind {
+			case model.Variable, model.Field, model.EnumConstant:
+				return e.Element
+			}
+		}
 		for _, entry := range gc.FindAllByQualifiedName(qn) {
 			switch entry.Element.Kind {
 			case model.Variable, model.Field, model.EnumConstant:
@@ -991,6 +1055,18 @@ func (r *SymbolResolver) lookupScopedFunc(gc core.GlobalContext, fc core.FileCon
 				if elem := r.lookupScopedFunc(gc, fc, node, target, argCount); elem != nil {
 					return elem
 				}
+			}
+		}
+		// 本文件内同作用域函数优先，避免命中其它文件的同名函数。
+		var localFuncs []*core.DefinitionEntry
+		for _, e := range localEntriesInScope(fc, scope, name) {
+			if isFunctionKind(e.Element.Kind) {
+				localFuncs = append(localFuncs, e)
+			}
+		}
+		if len(localFuncs) > 0 {
+			if e := pickOverload(localFuncs, argCount); e != nil {
+				return e.Element
 			}
 		}
 		qn := helper.BuildQN(scope, name)
