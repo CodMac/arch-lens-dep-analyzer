@@ -227,7 +227,7 @@ Base 只保留 `fileContexts` / `definitions` 容器与锁，索引结构由策�
 
 | # | 优先级 | Gap | 说明 |
 |---|---|---|---|
-| G-1 | **P0** | 注册顺序不确定 → 解析结果随机 | Collector 并行调用 `RegisterFileContext`（`engine/stage.go`），`primaryIndex` 先到先得。实测：`a.cpp`/`b.cpp` 各定义 `struct Dup`，`c.cpp` 的 `new Dup()` 连续 6 次命中 `a,b,a,b,a,a` |
+| G-1 | ~~P0~~ 已修复 | 注册顺序不确定 → 解析结果随机 | Collector 并行调用 `RegisterFileContext`（`engine/stage.go`），`primaryIndex` 先到先得。实测：`a.cpp`/`b.cpp` 各定义 `struct Dup`，`c.cpp` 的 `new Dup()` 连续 6 次命中 `a,b,a,b,a,a`。**修复**：并行收集结果暂存，按相对路径排序后串行注册（回归测试 `engine/determinism_test.go`） |
 | G-2 | P1 | 全局查找 Kind 盲 | `FindByQualifiedName` 只按 QN，类型/函数/变量同 QN 时无 Kind 维度；`FindByKind` 仅文件级有 |
 | G-3 | P1 | 无全局短名/按 Kind 索引 | 语言侧只能 `Definitions()` 全量扫描（O(defs)）做短名回退 |
 | G-4 | P2 | `RegisterFileContext` 非模板方法 | Java 覆盖后「先注册包 → 再委托 Base」两段各自加锁，非原子，且子类必须知道 Base 的调用顺序 |
