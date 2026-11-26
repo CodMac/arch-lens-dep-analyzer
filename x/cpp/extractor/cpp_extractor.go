@@ -1170,9 +1170,15 @@ func isUsePosition(node coreast.Node) bool {
 	if name := p.ChildByFieldName("name"); name != nil && name.Equal(node) {
 		return false
 	}
+	// init_declarator 的 declarator 是声明点，value 是初始化表达式（使用）。
+	if p.Kind() == "init_declarator" {
+		if d := p.ChildByFieldName("declarator"); d != nil && d.Equal(node) {
+			return false
+		}
+	}
 	switch p.Kind() {
 	case "declaration", "field_declaration", "parameter_declaration", "function_declarator",
-		"pointer_declarator", "reference_declarator", "array_declarator", "init_declarator",
+		"pointer_declarator", "reference_declarator", "array_declarator",
 		"type_definition", "alias_declaration", "preproc_def", "preproc_function_def",
 		"qualified_identifier", "namespace_definition", "template_parameter_list",
 		"struct_specifier", "class_specifier", "enum_specifier", "enumerator",

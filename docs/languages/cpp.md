@@ -558,9 +558,9 @@ Binder 负责 raw 类型文本 → QN。以下缺陷均经探针实测，按优�
 
 - 三层测试 + e2e 黄金回归集，全部位于 `x/cpp/test/`。
 - 测试文件按语言归属拆分：`*_base_test.go`（C/C++ 共享）、`*_c_test.go`（C 独有）、`*_cpp_test.go`（C++ 独有）；共享断言集中在 `assert_helper.go`。
-- e2e 基线：`x/cpp/testdata/e2e/baseline.golden.jsonl`（1887 元素 + 3295 关系，LevelBalanced）。元素条目含 `Path`，去重键为 `QN|Kind|Path`，跨文件同 QN 不再互相覆盖。
-- 元素覆盖（基线实测）：FILE 122 / NAMESPACE 96 / CLASS 32 / STRUCT 161 / ENUM 30 / ENUM_CONSTANT 64 / TYPE 60 / MACRO 57 / FIELD 223 / FUNCTION 188 / FUNCTION_DECL 75 / METHOD 89 / METHOD_DECL 102 / VARIABLE 521 / SCOPE_BLOCK 39 / LAMBDA 28。
-- 关系覆盖（基线实测）：CONTAIN 2139 / USE 390 / ASSIGN 195 / TYPE_ARG 139 / CALL 99 / IMPL_LINK 89 / PARAMETER 75 / IMPORT 46 / RETURN 38 / EXTEND 29 / CAPTURE 24 / CAST 15 / CREATE 8 / THROW 7 / FRIEND 2。
+- e2e 基线：`x/cpp/testdata/e2e/baseline.golden.jsonl`（1895 元素 + 3332 关系，LevelBalanced）。元素条目含 `Path`，去重键为 `QN|Kind|Path`，跨文件同 QN 不再互相覆盖。
+- 元素覆盖（基线实测）：FILE 123 / NAMESPACE 96 / CLASS 32 / STRUCT 161 / ENUM 31 / ENUM_CONSTANT 66 / TYPE 60 / MACRO 57 / FIELD 223 / FUNCTION 189 / FUNCTION_DECL 75 / METHOD 89 / METHOD_DECL 102 / VARIABLE 524 / SCOPE_BLOCK 39 / LAMBDA 28。
+- 关系覆盖（基线实测）：CONTAIN 2146 / USE 417 / ASSIGN 197 / TYPE_ARG 140 / CALL 99 / IMPL_LINK 89 / PARAMETER 75 / IMPORT 46 / RETURN 38 / EXTEND 29 / CAPTURE 24 / CAST 15 / CREATE 8 / THROW 7 / FRIEND 2。
 - 基线（LevelBalanced）中 PARAMETER/RETURN 大幅减少，是因为当前样例的参数/返回类型多为基本类型（`int`/`void`），被外部符号降噪过滤；CONTAIN/USE/ASSIGN 等指向源码符号的关系不受影响。
 - 测试用例：
   | 测试 | 覆盖 |

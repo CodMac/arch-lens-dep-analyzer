@@ -145,6 +145,21 @@ func TestExtractorCppStructural(t *testing.T) {
 	}
 }
 
+// TestExtractorCppInitUse 初始化表达式里的裸标识符要产 USE：
+// int x = gv / Color c = RED 不能因 init_declarator 被整体当成声明点而漏掉。
+func TestExtractorCppInitUse(t *testing.T) {
+	paths := ResolvePaths(t, "extractor/cpp/init_use", "*.cpp")
+	_, rels := RunExtraction(t, "x/cpp/testdata", paths)
+
+	for _, want := range []string{"iu_gv", "IuColor::IU_RED"} {
+		name := want
+		FindRel(t, rels, func(r *model.DependencyRelation) bool {
+			return r.Type == model.Use && r.Source.QualifiedName == "iu_use()" &&
+				r.Target.QualifiedName == name
+		})
+	}
+}
+
 // TestExtractorCppCrossFileContain 跨文件同 QN 类型的 CONTAIN 归属各自文件：
 // 各文件的 Outer 只包含本文件成员，不把其它文件同名类型的成员挂过来。
 func TestExtractorCppCrossFileContain(t *testing.T) {
