@@ -536,8 +536,8 @@ Binder 负责 raw 类型文本 → QN。以下缺陷均经探针实测，按优�
 | R-8 | ~~P3~~ 已修复 | **typeOf(formMember) 用成员名查类型** | **修复**：`formMember` 接收者类型未知时不再回退 `lookupType(成员名)`（`zz.field.run()` 不再把 `field` 当类型，`TestResolverCppMemberTypeFallback`） |
 | R-9 | ~~P3~~ 已修复 | **lookupMember 的 want 参数未使用** | **修复**：删除死参数 `want` |
 | R-10 | ~~P3~~ 已修复 | **全局短名回退 O(defs) 且取首个** | **修复**：文件/全局短名回退按 QN 排序消除注册顺序依赖，函数回退按实参个数挑选重载（`TestResolverCppGlobalFallbackArgCount`） |
-| R-11 | 边界 | 函数指针/成员函数指针/delete/虚派发 | `fp(1)` 无 CALL；`(s->*pm)(1)` 产畸形外部 CALL `s->*`；`delete p` 无关系；虚函数按静态类型解析 |
-| R-12 | P3 | Resolver 专用测试缺上述边界 | 现有 calls/create/use/assign/cast/chain/forms/overload/inherit/scope/external/lambda/throw 未覆盖 this->、作用域化类型、using/别名、外部返回链、未知接收者 |
+| R-11 | ~~边界~~ 已修复 | 函数指针/成员函数指针/delete/虚派发 | **修复**：`ERROR` 节点（tree-sitter 无法解析的 `(s->*pm)`）与 `->*`/`.*` 二元表达式不再退化为裸标识符，消除畸形外部 CALL `s->*`；`fp(1)` 无 CALL、`delete p` 不产动作关系、虚函数按静态类型解析均为既定约定（`TestResolverCppBoundaryForms`） |
+| R-12 | ~~P3~~ 已修复 | Resolver 专用测试缺上述边界 | **修复**：新增 scoped_type / this_ptr / unknown_recv / ret_external / using_alias / member_type_fallback / global_fallback / boundary 八组专用测试，覆盖本轮全部修复点 |
 
 ## 8. 与 SPI 契约的对应
 
@@ -558,9 +558,9 @@ Binder 负责 raw 类型文本 → QN。以下缺陷均经探针实测，按优�
 
 - 三层测试 + e2e 黄金回归集，全部位于 `x/cpp/test/`。
 - 测试文件按语言归属拆分：`*_base_test.go`（C/C++ 共享）、`*_c_test.go`（C 独有）、`*_cpp_test.go`（C++ 独有）；共享断言集中在 `assert_helper.go`。
-- e2e 基线：`x/cpp/testdata/e2e/baseline.golden.jsonl`（1733 元素 + 3256 关系，LevelBalanced）。
-- 元素覆盖（基线实测）：FILE 120 / NAMESPACE 67 / CLASS 30 / STRUCT 148 / ENUM 22 / ENUM_CONSTANT 49 / TYPE 42 / MACRO 53 / FIELD 206 / FUNCTION 175 / FUNCTION_DECL 70 / METHOD 89 / METHOD_DECL 100 / VARIABLE 495 / SCOPE_BLOCK 39 / LAMBDA 28。
-- 关系覆盖（基线实测）：CONTAIN 2115 / USE 388 / ASSIGN 194 / TYPE_ARG 133 / CALL 97 / IMPL_LINK 89 / PARAMETER 73 / IMPORT 45 / RETURN 37 / EXTEND 29 / CAPTURE 24 / CAST 15 / CREATE 8 / THROW 7 / FRIEND 2。
+- e2e 基线：`x/cpp/testdata/e2e/baseline.golden.jsonl`（1752 元素 + 3289 关系，LevelBalanced）。
+- 元素覆盖（基线实测）：FILE 121 / NAMESPACE 67 / CLASS 30 / STRUCT 149 / ENUM 22 / ENUM_CONSTANT 49 / TYPE 42 / MACRO 53 / FIELD 207 / FUNCTION 181 / FUNCTION_DECL 71 / METHOD 89 / METHOD_DECL 102 / VARIABLE 502 / SCOPE_BLOCK 39 / LAMBDA 28。
+- 关系覆盖（基线实测）：CONTAIN 2134 / USE 390 / ASSIGN 195 / TYPE_ARG 137 / CALL 99 / IMPL_LINK 89 / PARAMETER 76 / IMPORT 46 / RETURN 38 / EXTEND 29 / CAPTURE 24 / CAST 15 / CREATE 8 / THROW 7 / FRIEND 2。
 - 基线（LevelBalanced）中 PARAMETER/RETURN 大幅减少，是因为当前样例的参数/返回类型多为基本类型（`int`/`void`），被外部符号降噪过滤；CONTAIN/USE/ASSIGN 等指向源码符号的关系不受影响。
 - 测试用例：
   | 测试 | 覆盖 |
@@ -645,6 +645,14 @@ Binder 负责 raw 类型文本 → QN。以下缺陷均经探针实测，按优�
   | `TestResolverCppLambdaVar` | lambda 变量调用、立即调用 lambda |
   | `TestResolverCppCast` | C 风格 + static/dynamic/const/reinterpret_cast、`(void)` 抑制 |
   | `TestResolverCppThrow` | throw new T / throw T(...) / throw var |
+  | `TestResolverCppScopedType` | 同名类型按使用作用域解析（`B` 内 `Foo` 命中 `B::Foo`，EXTEND/CREATE/CAST/THROW） |
+  | `TestResolverCppThisPtr` | `this->` 按宿主类型与继承链解析（类内/类外定义，命中 `Base::*` 而非同名 `X::*`） |
+  | `TestResolverCppUnknownReceiver` | 接收者类型未知时不回退非限定查找（`zz.freeFn`/`zz.baseField` 不误命中） |
+  | `TestResolverCppReturnExternalChain` | 返回类型链式调用：外部返回类型归属外部类型，源码内返回类型仍优先 |
+  | `TestResolverCppUsingAlias` | using 声明 / 命名空间别名参与解析（函数/变量/类型 + `na::f()`） |
+  | `TestResolverCppMemberTypeFallback` | 接收者未知的成员访问不回退按成员名查类型 |
+  | `TestResolverCppGlobalFallbackArgCount` | 文件/全局短名回退按实参个数挑选重载 |
+  | `TestResolverCppBoundaryForms` | 函数指针/成员函数指针/delete/虚派发/智能指针/auto 边界约定 |
   | `TestBinderCppConceptNotAlias` | concept 不进别名表、不产 `underlying_with_qn`；同名类型引用不被约束表达式污染 |
   | `TestBinderCppAliasScope` | 嵌套类同名别名遮蔽、跨文件同名 typedef 各按本文件展开、模板别名退化保留自身 QN |
   | `TestBinderCppMultiWordPrimitive` | 多词基本类型（`unsigned long long` 等）识别为 PRIMITIVE，`volatile` 剥离 |

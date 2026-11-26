@@ -707,6 +707,56 @@ func TestResolverCppGlobalFallbackArgCount(t *testing.T) {
 	}
 }
 
+// TestResolverCppBoundaryForms 边界形态：函数指针/成员函数指针/delete/虚派发/
+// 智能指针/auto 的当前解析约定。
+func TestResolverCppBoundaryForms(t *testing.T) {
+	paths := ResolvePaths(t, "resolver/cpp/boundary", "*.cpp")
+	ec := RunPipeline(t, "x/cpp/testdata", paths, core.LevelRaw)
+
+	// 函数指针调用 fp(1) 与成员函数指针调用 (s->*pm)() 不产 CALL。
+	for _, r := range ec.Relations {
+		if r.Type != model.Call {
+			continue
+		}
+		switch r.Source.QualifiedName {
+		case "callFuncPtr(int (*)(int))", "callMemberPtr(Svc*,int (*)(void))":
+			t.Errorf("unexpected CALL from %s -> %s", r.Source.QualifiedName, r.Target.QualifiedName)
+		}
+		if strings.Contains(r.Target.QualifiedName, "->*") || strings.Contains(r.Target.QualifiedName, ".*") {
+			t.Errorf("malformed member-pointer CALL target %q", r.Target.QualifiedName)
+		}
+	}
+
+	// delete p 不产动作关系（仅形参/包含/使用变量 p）。
+	for _, r := range ec.Relations {
+		if r.Source.QualifiedName != "destroy(Svc*)" {
+			continue
+		}
+		switch r.Type {
+		case model.Call, model.Create, model.Cast, model.Assign, model.Throw:
+			t.Errorf("delete should not produce %s relation -> %s", r.Type, r.Target.QualifiedName)
+		}
+	}
+
+	// 虚派发按静态类型解析。
+	FindRel(t, ec.Relations, func(r *model.DependencyRelation) bool {
+		return r.Type == model.Call && r.Source.QualifiedName == "dispatch(Svc*)" &&
+			r.Target.QualifiedName == "Svc::run()" && !r.Target.IsFormExternal
+	})
+
+	// 智能指针未解包：p->run() 归属 std::unique_ptr（外部方法）。
+	FindRel(t, ec.Relations, func(r *model.DependencyRelation) bool {
+		return r.Type == model.Call && r.Source.QualifiedName == "smartPtr()" &&
+			r.Target.QualifiedName == "std::unique_ptr::run" && r.Target.IsFormExternal
+	})
+
+	// auto 不推导：s.run() 退化为外部方法 s::run。
+	FindRel(t, ec.Relations, func(r *model.DependencyRelation) bool {
+		return r.Type == model.Call && r.Source.QualifiedName == "autoVar()" &&
+			r.Target.QualifiedName == "makeSvc()"
+	})
+}
+
 // TestResolverCppReturnExternalChain 返回类型链式调用：外部返回类型按外部
 // 类型归属接收者，源码内返回类型仍按源码类型解析。
 func TestResolverCppReturnExternalChain(t *testing.T) {

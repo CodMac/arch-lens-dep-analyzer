@@ -324,6 +324,20 @@ func (r *SymbolResolver) normalize(node coreast.Node, src []byte) *expr {
 
 	case "subscript_expression":
 		return r.normalize(node.ChildByFieldName("argument"), src)
+
+	case "binary_expression":
+		// 成员函数指针调用 (s->*pm)(...) / (s.*pm)(...)：不建模为普通 CALL，
+		// 否则会退化为畸形外部符号（s->*）。
+		if op := node.ChildByFieldName("operator"); op != nil {
+			switch strings.TrimSpace(op.Utf8Text(src)) {
+			case "->*", ".*":
+				return nil
+			}
+		}
+
+	case "ERROR":
+		// 语法错误节点（如 tree-sitter 无法解析的 (s->*pm)）：不产伪符号。
+		return nil
 	}
 
 	// 未知形态：退化为裸标识符（名称取原文）。
