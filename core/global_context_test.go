@@ -27,16 +27,20 @@ func def(qn, path string, kind model.ElementKind) *DefinitionEntry {
 // testIndex 是 core 测试用的 DefinitionIndex：复刻「QN|Kind|Path 全量键 +
 // 定义优先主索引 + 函数族重载索引」语义，供 BaseGlobalContext 容器测试使用。
 type testIndex struct {
-	qn       map[string]*DefinitionEntry
-	primary  map[string]*DefinitionEntry
-	overload map[string][]*DefinitionEntry
+	qn        map[string]*DefinitionEntry
+	primary   map[string]*DefinitionEntry
+	overload  map[string][]*DefinitionEntry
+	all       map[string][]*DefinitionEntry
+	shortName map[string][]*DefinitionEntry
 }
 
 func newTestIndex() *testIndex {
 	return &testIndex{
-		qn:       make(map[string]*DefinitionEntry),
-		primary:  make(map[string]*DefinitionEntry),
-		overload: make(map[string][]*DefinitionEntry),
+		qn:        make(map[string]*DefinitionEntry),
+		primary:   make(map[string]*DefinitionEntry),
+		overload:  make(map[string][]*DefinitionEntry),
+		all:       make(map[string][]*DefinitionEntry),
+		shortName: make(map[string][]*DefinitionEntry),
 	}
 }
 
@@ -51,6 +55,8 @@ func (i *testIndex) Add(d *DefinitionEntry) (*DefinitionEntry, bool) {
 		return nil, false
 	}
 	i.qn[key] = d
+	i.all[d.Element.QualifiedName] = append(i.all[d.Element.QualifiedName], d)
+	i.shortName[d.Element.Name] = append(i.shortName[d.Element.Name], d)
 	if existing, ok := i.primary[d.Element.QualifiedName]; !ok || (existing.IsDeclaration && !d.IsDeclaration) {
 		i.primary[d.Element.QualifiedName] = d
 	}
@@ -65,6 +71,14 @@ func (i *testIndex) Add(d *DefinitionEntry) (*DefinitionEntry, bool) {
 func (i *testIndex) FindByQualifiedName(qn string) (*DefinitionEntry, bool) {
 	e, ok := i.primary[qn]
 	return e, ok
+}
+
+func (i *testIndex) FindAllByQualifiedName(qn string) []*DefinitionEntry {
+	return i.all[qn]
+}
+
+func (i *testIndex) FindByShortName(name string) []*DefinitionEntry {
+	return i.shortName[name]
 }
 
 func (i *testIndex) FindOverloadCandidates(noParamsQN string) ([]*DefinitionEntry, bool) {

@@ -19,15 +19,22 @@ type DefinitionIndex struct {
 	qnIndex       map[string]*core.DefinitionEntry
 	primaryIndex  map[string]*core.DefinitionEntry
 	overloadIndex map[string][]*core.DefinitionEntry
+
+	// qnAllIndex 同 QN 的全部条目，按注册顺序保存。
+	qnAllIndex map[string][]*core.DefinitionEntry
+	// shortNameIndex 短名 → 全部条目（跨文件）。
+	shortNameIndex map[string][]*core.DefinitionEntry
 }
 
 // NewDefinitionIndex 创建 Java 全局定义索引。
 func NewDefinitionIndex(builder core.SymbolBuilder) *DefinitionIndex {
 	return &DefinitionIndex{
-		builder:       builder,
-		qnIndex:       make(map[string]*core.DefinitionEntry),
-		primaryIndex:  make(map[string]*core.DefinitionEntry),
-		overloadIndex: make(map[string][]*core.DefinitionEntry),
+		builder:        builder,
+		qnIndex:        make(map[string]*core.DefinitionEntry),
+		primaryIndex:   make(map[string]*core.DefinitionEntry),
+		overloadIndex:  make(map[string][]*core.DefinitionEntry),
+		qnAllIndex:     make(map[string][]*core.DefinitionEntry),
+		shortNameIndex: make(map[string][]*core.DefinitionEntry),
 	}
 }
 
@@ -38,6 +45,8 @@ func (idx *DefinitionIndex) Add(def *core.DefinitionEntry) (*core.DefinitionEntr
 		return nil, false
 	}
 	idx.qnIndex[key] = def
+	idx.qnAllIndex[def.Element.QualifiedName] = append(idx.qnAllIndex[def.Element.QualifiedName], def)
+	idx.shortNameIndex[def.Element.Name] = append(idx.shortNameIndex[def.Element.Name], def)
 
 	if _, exists := idx.primaryIndex[def.Element.QualifiedName]; !exists {
 		idx.primaryIndex[def.Element.QualifiedName] = def
@@ -54,6 +63,24 @@ func (idx *DefinitionIndex) Add(def *core.DefinitionEntry) (*core.DefinitionEntr
 func (idx *DefinitionIndex) FindByQualifiedName(qn string) (*core.DefinitionEntry, bool) {
 	e, ok := idx.primaryIndex[qn]
 	return e, ok
+}
+
+// FindAllByQualifiedName 按限定名返回全部定义。
+func (idx *DefinitionIndex) FindAllByQualifiedName(qn string) []*core.DefinitionEntry {
+	entries := idx.qnAllIndex[qn]
+	if len(entries) == 0 {
+		return nil
+	}
+	return append([]*core.DefinitionEntry(nil), entries...)
+}
+
+// FindByShortName 按短名返回全部定义（跨文件）。
+func (idx *DefinitionIndex) FindByShortName(name string) []*core.DefinitionEntry {
+	entries := idx.shortNameIndex[name]
+	if len(entries) == 0 {
+		return nil
+	}
+	return append([]*core.DefinitionEntry(nil), entries...)
 }
 
 // FindOverloadCandidates 按不含参数的 QN 查找可重载候选。

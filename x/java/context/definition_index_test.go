@@ -34,6 +34,21 @@ func TestJavaIndexCrossFileCoexist(t *testing.T) {
 	}
 }
 
+// TestJavaIndexFindByShortName 全局短名索引返回不同包的同名类。
+func TestJavaIndexFindByShortName(t *testing.T) {
+	idx := NewDefinitionIndex(testBuilder{})
+	idx.Add(entry("a.Foo", "Foo", "a/Foo.java", model.Class))
+	idx.Add(entry("b.Foo", "Foo", "b/Foo.java", model.Class))
+
+	entries := idx.FindByShortName("Foo")
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 Foo entries, got %d", len(entries))
+	}
+	if all := idx.FindAllByQualifiedName("a.Foo"); len(all) != 1 {
+		t.Fatalf("expected 1 entry for a.Foo, got %d", len(all))
+	}
+}
+
 // TestJavaIndexOverloadOnlyMethod 仅 Method 参与重载索引。
 func TestJavaIndexOverloadOnlyMethod(t *testing.T) {
 	idx := NewDefinitionIndex(testBuilder{})

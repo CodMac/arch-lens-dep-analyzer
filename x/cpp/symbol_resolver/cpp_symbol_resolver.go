@@ -551,8 +551,10 @@ func (r *SymbolResolver) declaredTypeOf(gc core.GlobalContext, fc core.FileConte
 
 // lookupType 按限定名/短名查找类型元素。
 func (r *SymbolResolver) lookupType(gc core.GlobalContext, fc core.FileContext, name string) *model.CodeElement {
-	if entry, ok := gc.FindByQualifiedName(name); ok && isTypeKind(entry.Element.Kind) {
-		return entry.Element
+	for _, entry := range gc.FindAllByQualifiedName(name) {
+		if isTypeKind(entry.Element.Kind) {
+			return entry.Element
+		}
 	}
 	// 相对限定名：namespace app 内的 core::Base 实为 app::core::Base。
 	if strings.Contains(name, helper.QNSep) {
@@ -562,8 +564,10 @@ func (r *SymbolResolver) lookupType(gc core.GlobalContext, fc core.FileContext, 
 		}
 		for _, ns := range namespaces {
 			if cand := helper.BuildQN(ns, name); cand != name {
-				if entry, ok := gc.FindByQualifiedName(cand); ok && isTypeKind(entry.Element.Kind) {
-					return entry.Element
+				for _, entry := range gc.FindAllByQualifiedName(cand) {
+					if isTypeKind(entry.Element.Kind) {
+						return entry.Element
+					}
 				}
 			}
 		}
@@ -577,8 +581,8 @@ func (r *SymbolResolver) lookupType(gc core.GlobalContext, fc core.FileContext, 
 		}
 	}
 	// 全局短名（跨文件）。
-	for _, def := range gc.Definitions() {
-		if def.Element.Name == name && isTypeKind(def.Element.Kind) {
+	for _, def := range gc.FindByShortName(name) {
+		if isTypeKind(def.Element.Kind) {
 			return def.Element
 		}
 	}
@@ -589,7 +593,7 @@ func (r *SymbolResolver) lookupType(gc core.GlobalContext, fc core.FileContext, 
 func (r *SymbolResolver) lookupMember(gc core.GlobalContext, fc core.FileContext, owner *model.CodeElement, name string, want model.ElementKind) *model.CodeElement {
 	for _, o := range r.typeChain(gc, fc, owner, 0) {
 		qn := helper.BuildQN(o.QualifiedName, name)
-		if entry, ok := gc.FindByQualifiedName(qn); ok {
+		for _, entry := range gc.FindAllByQualifiedName(qn) {
 			switch entry.Element.Kind {
 			case model.Field, model.Variable, model.EnumConstant:
 				return entry.Element
@@ -773,8 +777,10 @@ func enclosingScope(fc core.FileContext, node coreast.Node) *model.CodeElement {
 func (r *SymbolResolver) lookupLocalVariable(gc core.GlobalContext, fc core.FileContext, node coreast.Node, name string) *model.CodeElement {
 	for _, scope := range r.scopeChain(fc, node) {
 		qn := helper.BuildQN(scope, name)
-		if entry, ok := gc.FindByQualifiedName(qn); ok && entry.Element.Kind == model.Variable {
-			return entry.Element
+		for _, entry := range gc.FindAllByQualifiedName(qn) {
+			if entry.Element.Kind == model.Variable {
+				return entry.Element
+			}
 		}
 	}
 	return nil
@@ -784,7 +790,7 @@ func (r *SymbolResolver) lookupLocalVariable(gc core.GlobalContext, fc core.File
 func (r *SymbolResolver) lookupScopedSymbol(gc core.GlobalContext, fc core.FileContext, node coreast.Node, name string) *model.CodeElement {
 	for _, scope := range r.scopeChain(fc, node) {
 		qn := helper.BuildQN(scope, name)
-		if entry, ok := gc.FindByQualifiedName(qn); ok {
+		for _, entry := range gc.FindAllByQualifiedName(qn) {
 			switch entry.Element.Kind {
 			case model.Variable, model.Field, model.EnumConstant:
 				return entry.Element
@@ -803,10 +809,7 @@ func (r *SymbolResolver) lookupScopedSymbol(gc core.GlobalContext, fc core.FileC
 	// 全局短名（跨文件全局变量/枚举常量）。
 	// 必须排除局部变量与类字段：它们不具全局可见性，按短名跨文件命中会
 	// 把 `std::runtime_error(...)` 的 `std` 误解析为别的文件里的局部变量。
-	for _, def := range gc.Definitions() {
-		if def.Element.Name != name {
-			continue
-		}
+	for _, def := range gc.FindByShortName(name) {
 		switch def.Element.Kind {
 		case model.EnumConstant:
 			return def.Element
@@ -847,8 +850,8 @@ func (r *SymbolResolver) lookupScopedFunc(gc core.GlobalContext, fc core.FileCon
 		}
 	}
 	// 全局短名。
-	for _, def := range gc.Definitions() {
-		if def.Element.Name == name && isFunctionKind(def.Element.Kind) {
+	for _, def := range gc.FindByShortName(name) {
+		if isFunctionKind(def.Element.Kind) {
 			return def.Element
 		}
 	}

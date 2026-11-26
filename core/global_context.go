@@ -48,8 +48,16 @@ type GlobalContext interface {
 	// 此方法返回「定义优先」：优先非声明条目（由 DefinitionEntry.IsDeclaration 判定）。
 	FindByQualifiedName(qn string) (*DefinitionEntry, bool)
 
+	// FindAllByQualifiedName 按限定名返回全部定义（定义优先排序）。
+	// 同 QN 可对应不同 Kind（类型/函数/变量、声明/定义），调用方按 Kind 自行挑选。
+	FindAllByQualifiedName(qn string) []*DefinitionEntry
+
+	// FindByShortName 按短名返回全部定义（跨文件）。
+	// 用于替代语言侧对 Definitions() 的全量扫描（O(defs)）。
+	FindByShortName(name string) []*DefinitionEntry
+
 	// FindOverloadCandidates 按不含参数的 QN 查找可重载候选（Method/Function 族）。
-	// 参与 kind 由 GlobalContextRules.OverloadKinds 注入。
+	// 参与 kind 由语言 DefinitionIndex 实现决定。
 	FindOverloadCandidates(noParamsQN string) ([]*DefinitionEntry, bool)
 
 	// BuildQualifiedName 委托 Builder 拼接 QN。
@@ -79,6 +87,12 @@ type DefinitionIndex interface {
 
 	// FindByQualifiedName 按限定名查找定义（定义优先）。
 	FindByQualifiedName(qn string) (*DefinitionEntry, bool)
+
+	// FindAllByQualifiedName 按限定名返回全部定义（定义优先排序）。
+	FindAllByQualifiedName(qn string) []*DefinitionEntry
+
+	// FindByShortName 按短名返回全部定义。
+	FindByShortName(name string) []*DefinitionEntry
 
 	// FindOverloadCandidates 按不含参数的 QN 查找可重载候选。
 	FindOverloadCandidates(noParamsQN string) ([]*DefinitionEntry, bool)
@@ -174,6 +188,20 @@ func (gc *BaseGlobalContext) FindByQualifiedName(qn string) (*DefinitionEntry, b
 	gc.mu.RLock()
 	defer gc.mu.RUnlock()
 	return gc.index.FindByQualifiedName(qn)
+}
+
+// FindAllByQualifiedName 按限定名返回全部定义（定义优先排序，由语言索引决定）。
+func (gc *BaseGlobalContext) FindAllByQualifiedName(qn string) []*DefinitionEntry {
+	gc.mu.RLock()
+	defer gc.mu.RUnlock()
+	return gc.index.FindAllByQualifiedName(qn)
+}
+
+// FindByShortName 按短名返回全部定义（跨文件，由语言索引决定）。
+func (gc *BaseGlobalContext) FindByShortName(name string) []*DefinitionEntry {
+	gc.mu.RLock()
+	defer gc.mu.RUnlock()
+	return gc.index.FindByShortName(name)
 }
 
 // FindOverloadCandidates 按不含参数的 QN 查找可重载候选（候选 kind 由语言索引决定）。

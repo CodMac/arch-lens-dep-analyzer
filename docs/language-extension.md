@@ -230,8 +230,8 @@ type DefinitionIndex interface {
 | # | 优先级 | Gap | 说明 |
 |---|---|---|---|
 | G-1 | ~~P0~~ 已修复 | 注册顺序不确定 → 解析结果随机 | Collector 并行调用 `RegisterFileContext`（`engine/stage.go`），`primaryIndex` 先到先得。实测：`a.cpp`/`b.cpp` 各定义 `struct Dup`，`c.cpp` 的 `new Dup()` 连续 6 次命中 `a,b,a,b,a,a`。**修复**：并行收集结果暂存，按相对路径排序后串行注册（回归测试 `engine/determinism_test.go`） |
-| G-2 | P1 | 全局查找 Kind 盲 | `FindByQualifiedName` 只按 QN，类型/函数/变量同 QN 时无 Kind 维度；`FindByKind` 仅文件级有 |
-| G-3 | P1 | 无全局短名/按 Kind 索引 | 语言侧只能 `Definitions()` 全量扫描（O(defs)）做短名回退 |
+| G-2 | ~~P1~~ 已修复 | 全局查找 Kind 盲 | `FindByQualifiedName` 只按 QN。**修复**：新增 `FindAllByQualifiedName(qn)` 返回同 QN 全部条目（定义优先），调用方按 Kind 挑选；C++ Resolver 的类型/成员/变量查找已改用 |
+| G-3 | ~~P1~~ 已修复 | 无全局短名/按 Kind 索引 | 语言侧只能 `Definitions()` 全量扫描（O(defs)）。**修复**：`DefinitionIndex` 维护 `shortNameIndex`，新增 `FindByShortName(name)`；C++ Resolver 三处全局短名回退已改用它 |
 | G-4 | P2 | `RegisterFileContext` 非模板方法 | Java 覆盖后「先注册包 → 再委托 Base」两段各自加锁，非原子，且子类必须知道 Base 的调用顺序 |
 | G-5 | P2 | `addDefinitionLocked` / `replaceDefinitionLocked` 不可复用 | 未导出，语言实现无法在保持锁语义的前提下定制索引 |
 | G-6 | P3 | `FindOverloadCandidates` 返回内部切片 | 调用方可篡改索引 |
@@ -249,6 +249,6 @@ type DefinitionIndex interface {
 ### 8.5 修复优先级
 
 - **P0**：G-1（注册顺序确定化：按路径排序注册 + 歧义显式判 nil，禁止「先到先得」）。
-- **P1**：~~主键与三索引下沉~~（已由 `DefinitionIndex` 完成）、~~F-1~~、G-2、G-3、V-1。
+- **P1**：~~主键与三索引下沉~~（已由 `DefinitionIndex` 完成）、~~F-1~~、~~G-2~~、~~G-3~~、V-1。
 - **P2**：F-3/F-4/F-5、G-4/G-5/G-6、V-2。
 - **P3**：F-6/F-7、G-7/G-8/G-9。

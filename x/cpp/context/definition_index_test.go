@@ -52,6 +52,40 @@ func TestCppIndexDeclDefReplace(t *testing.T) {
 	}
 }
 
+// TestCppIndexFindAllByQNDefinitionFirst 同 QN 多 Kind 时返回全部条目且定义优先。
+func TestCppIndexFindAllByQNDefinitionFirst(t *testing.T) {
+	idx := NewDefinitionIndex(testBuilder{})
+	idx.Add(entry("S::m()", "m", "s.h", model.MethodDecl, true))
+	idx.Add(entry("S::m()", "m", "s.cpp", model.Method, false))
+
+	all := idx.FindAllByQualifiedName("S::m()")
+	if len(all) != 2 {
+		t.Fatalf("expected 2 entries for S::m(), got %d", len(all))
+	}
+	if all[0].Element.Kind != model.Method {
+		t.Fatalf("definition should come first, got %s", all[0].Element.Kind)
+	}
+	if all[1].Element.Kind != model.MethodDecl {
+		t.Fatalf("declaration should come last, got %s", all[1].Element.Kind)
+	}
+}
+
+// TestCppIndexFindByShortNameAcrossFiles 全局短名索引跨文件返回全部同名定义。
+func TestCppIndexFindByShortNameAcrossFiles(t *testing.T) {
+	idx := NewDefinitionIndex(testBuilder{})
+	idx.Add(entry("A::Dup", "Dup", "a.cpp", model.Struct, false))
+	idx.Add(entry("B::Dup", "Dup", "b.cpp", model.Struct, false))
+	idx.Add(entry("Other", "Other", "c.cpp", model.Struct, false))
+
+	entries := idx.FindByShortName("Dup")
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 Dup entries, got %d", len(entries))
+	}
+	if got := idx.FindByShortName("Other"); len(got) != 1 {
+		t.Fatalf("expected 1 Other entry, got %d", len(got))
+	}
+}
+
 // TestCppIndexOverloadKinds 自由函数与声明参与重载索引，普通类型不参与。
 func TestCppIndexOverloadKinds(t *testing.T) {
 	idx := NewDefinitionIndex(testBuilder{})
