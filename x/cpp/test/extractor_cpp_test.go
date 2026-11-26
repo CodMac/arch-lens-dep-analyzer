@@ -145,6 +145,35 @@ func TestExtractorCppStructural(t *testing.T) {
 	}
 }
 
+// TestExtractorCppCrossFileContain 跨文件同 QN 类型的 CONTAIN 归属各自文件：
+// 各文件的 Outer 只包含本文件成员，不把其它文件同名类型的成员挂过来。
+func TestExtractorCppCrossFileContain(t *testing.T) {
+	paths := ResolvePaths(t, "binder/cpp/alias_scope", "nested.cpp")
+	paths = append(paths, ResolvePaths(t, "collector/cpp/class", "cls.cpp")...)
+	ec := RunPipeline(t, "x/cpp/testdata", paths, core.LevelRaw)
+
+	find := func(srcPath, target string) {
+		var found *model.DependencyRelation
+		for _, r := range ec.Relations {
+			if r.Type != model.Contain || r.Source == nil || r.Target == nil {
+				continue
+			}
+			if r.Source.QualifiedName == "Outer" && r.Target.QualifiedName == target {
+				found = r
+				break
+			}
+		}
+		if found == nil {
+			t.Fatalf("no CONTAIN Outer -> %s", target)
+		}
+		if found.Source.Path != srcPath {
+			t.Errorf("CONTAIN Outer -> %s Source.Path = %q, want %q", target, found.Source.Path, srcPath)
+		}
+	}
+	find("binder/cpp/alias_scope/nested.cpp", "Outer::alias_t")
+	find("collector/cpp/class/cls.cpp", "Outer::static_field")
+}
+
 // TestExtractorCppActions Call / Create / Cast / Assign / Use / Throw 全形态。
 func TestExtractorCppActions(t *testing.T) {
 	paths := ResolveTree(t, "extractor/cpp/actions")

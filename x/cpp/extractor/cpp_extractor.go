@@ -135,7 +135,13 @@ func (e *Extractor) extractHierarchy(fCtx core.FileContext, gc core.GlobalContex
 		if entry.ParentQN == "" {
 			continue
 		}
-		parent, ok := gc.FindByQualifiedName(entry.ParentQN)
+		// 父元素优先按本文件解析：跨文件同 QN 类型（各文件各有一个 Outer）时，
+		// 全局查找只会返回其中一个，导致子元素全部挂到同一父元素上。
+		parent, ok := fCtx.FindByQualifiedName(entry.ParentQN)
+		if !ok {
+			// 父级不在本文件：类外/跨文件定义，回退全局查找。
+			parent, ok = gc.FindByQualifiedName(entry.ParentQN)
+		}
 		if !ok {
 			continue
 		}
