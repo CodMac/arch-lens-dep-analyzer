@@ -126,9 +126,14 @@ func (b *Binder) resolveToQN(gc core.GlobalContext, fCtx core.FileContext, owner
 	}
 	// 模板别名底层退化为模板变量（template<class T> using Vec = T*;）：
 	// 展开结果 "T" 无意义，保留别名自身 QN。
+	// 但单大写字母也可能是真实类型（typedef S value_type; struct S {...};）：
+	// 能解析到源码内类型时按真实类型处理，只有解析不到才视为模板变量。
 	if helper.IsTypeVariable(base) && base != origBase {
-		if elem := b.findAliasElem(gc, fCtx, ownerQN, origBase); elem != nil {
-			return elem.QualifiedName
+		real := b.resolver.ResolveType(gc, fCtx, base, model.Class)
+		if real == nil || real.IsFormExternal {
+			if elem := b.findAliasElem(gc, fCtx, ownerQN, origBase); elem != nil {
+				return elem.QualifiedName
+			}
 		}
 	}
 

@@ -43,6 +43,21 @@ func TestBinderCppAliasScope(t *testing.T) {
 	AssertMores(t, gc, "Holder::v", constants.FieldTypeWithQN, "Vec")
 }
 
+// TestBinderCppSingleLetterStruct 单大写字母真实类型不被当作模板变量：
+// typedef S value_type 的底层应解析为 struct S，而非退回别名自身。
+func TestBinderCppSingleLetterStruct(t *testing.T) {
+	paths := ResolvePaths(t, "binder/cpp/single_letter_struct", "*.cpp")
+	gc, rels := RunExtraction(t, "x/cpp/testdata", paths)
+
+	AssertMores(t, gc, "value_type", constants.TypeUnderlyingWithQN, "S")
+	AssertMores(t, gc, "A::v", constants.FieldTypeWithQN, "S")
+
+	FindRel(t, rels, func(r *model.DependencyRelation) bool {
+		return r.Type == model.TypeArg && r.Source.QualifiedName == "A::v" &&
+			r.Target.QualifiedName == "S"
+	})
+}
+
 // TestBinderCppMultiWordPrimitive 多词基本类型识别为 PRIMITIVE，不落为外部类型。
 func TestBinderCppMultiWordPrimitive(t *testing.T) {
 	paths := ResolvePaths(t, "binder/cpp/primitive", "*.cpp")

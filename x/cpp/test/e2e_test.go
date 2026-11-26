@@ -27,6 +27,7 @@ type goldenEntry struct {
 	QN       string `json:"QN"`
 	Type     string `json:"Type,omitempty"`
 	Kind     string `json:"Kind,omitempty"`
+	Path     string `json:"Path,omitempty"`
 	Source   string `json:"Source,omitempty"`
 	Target   string `json:"Target,omitempty"`
 	Location string `json:"Location,omitempty"`
@@ -45,6 +46,7 @@ func (s *e2eSnapshot) addElement(el *model.CodeElement) {
 	s.entries = append(s.entries, goldenEntry{
 		QN:       el.QualifiedName,
 		Kind:     string(el.Kind),
+		Path:     el.Path,
 		IsSource: true,
 	})
 }
@@ -88,6 +90,10 @@ func (s *e2eSnapshot) sortAndRender() string {
 		if a.Kind != b.Kind {
 			return a.Kind < b.Kind
 		}
+		// 跨文件同 QN+Kind 共存：以 Path 作确定性次序。
+		if a.Path != b.Path {
+			return a.Path < b.Path
+		}
 		if a.Type != b.Type {
 			return a.Type < b.Type
 		}
@@ -114,14 +120,15 @@ func TestE2EGolden(t *testing.T) {
 
 	ec := RunPipeline(t, "x/cpp/testdata", paths, core.LevelBalanced)
 
-	// 声明/定义同 QN 共存（FUNCTION_DECL vs FUNCTION），去重键含 Kind。
+	// 声明/定义同 QN 共存（FUNCTION_DECL vs FUNCTION）、跨文件同 QN 共存，
+	// 去重键含 Kind + Path。
 	seen := map[string]bool{}
 	for _, def := range ec.GC.Definitions() {
 		el := def.Element
 		if el == nil {
 			continue
 		}
-		key := el.QualifiedName + "|" + string(el.Kind)
+		key := el.QualifiedName + "|" + string(el.Kind) + "|" + el.Path
 		if seen[key] {
 			continue
 		}
