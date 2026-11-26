@@ -81,7 +81,9 @@ func (b *Binder) BindSymbols(gc core.GlobalContext) error {
 			if isConcept(mores) {
 				continue
 			}
-			if raw, ok := mores[constants.TypeUnderlying].(string); ok && raw != "" {
+			// 匿名 struct/union/class 承载实体（typedef struct {...} Point;）：
+			// 别名本身即目标类型，底层文本不是可解析的类型名，不绑定 QN。
+			if raw, ok := mores[constants.TypeUnderlying].(string); ok && raw != "" && !isAnonymousTypeText(raw) {
 				mores[constants.TypeUnderlyingWithQN] = b.resolveToQN(gc, fCtx, elem.QualifiedName, raw)
 			}
 		}
