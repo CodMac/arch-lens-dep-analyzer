@@ -127,10 +127,19 @@ func NewBaseGlobalContext(resolver SymbolResolver, builder SymbolBuilder, index 
 }
 
 // RegisterFileContext 登记文件内全部定义（同一把写锁下批量完成）。
-// 包/命名空间注册属于语言策略：语言上下文覆盖本方法，先完成自身注册再委托本实现。
 func (gc *BaseGlobalContext) RegisterFileContext(fc FileContext) {
+	gc.RegisterFileContextWith(fc, nil)
+}
+
+// RegisterFileContextWith 是 RegisterFileContext 的模板方法：
+// 在同一把写锁内先执行 before（语言专属注册，如 Java 的包层级），再登记文件与定义。
+// before 内必须使用 AddDefinitionLocked（已持写锁，不可再调加锁方法）。
+func (gc *BaseGlobalContext) RegisterFileContextWith(fc FileContext, before func()) {
 	gc.mu.Lock()
 	defer gc.mu.Unlock()
+	if before != nil {
+		before()
+	}
 	gc.fileContexts[fc.FilePath()] = fc
 	for _, def := range fc.Definitions() {
 		gc.addDefinitionLocked(def)
@@ -170,6 +179,13 @@ func (gc *BaseGlobalContext) AddDefinition(def *DefinitionEntry) {
 	gc.addDefinitionLocked(def)
 }
 
+// AddDefinitionLocked 在调用方已持写锁时登记定义。
+// 供语言实现的自定义注册流程（如 RegisterFileContextWith 的 before）复用，
+// 避免重复实现索引同步逻辑。
+func (gc *BaseGlobalContext) AddDefinitionLocked(def *DefinitionEntry) {
+	gc.addDefinitionLocked(def)
+}
+
 // addDefinitionLocked 调用语言索引登记定义，并维护 definitions 切片。
 // 索引负责去重与声明/定义替换判定，Base 只按结果同步切片顺序。
 func (gc *BaseGlobalContext) addDefinitionLocked(def *DefinitionEntry) {
@@ -195,6 +211,12 @@ func (gc *BaseGlobalContext) FindByQualifiedName(qn string) (*DefinitionEntry, b
 	return gc.index.FindByQualifiedName(qn)
 }
 
+// FindByQualifiedNameLocked 在调用方已持锁（读或写）时按限定名查找定义。
+// 供 RegisterFileContextWith 的 before 等持锁流程复用。
+func (gc *BaseGlobalContext) FindByQualifiedNameLocked(qn string) (*DefinitionEntry, bool) {
+	return gc.index.FindByQualifiedName(qn)
+}
+
 // FindAllByQualifiedName 按限定名返回全部定义（定义优先排序，由语言索引决定）。
 func (gc *BaseGlobalContext) FindAllByQualifiedName(qn string) []*DefinitionEntry {
 	gc.mu.RLock()
@@ -210,10 +232,15 @@ func (gc *BaseGlobalContext) FindByShortName(name string) []*DefinitionEntry {
 }
 
 // FindOverloadCandidates 按不含参数的 QN 查找可重载候选（候选 kind 由语言索引决定）。
+// 返回副本，避免调用方篡改索引内部切片。
 func (gc *BaseGlobalContext) FindOverloadCandidates(noParamsQN string) ([]*DefinitionEntry, bool) {
 	gc.mu.RLock()
 	defer gc.mu.RUnlock()
-	return gc.index.FindOverloadCandidates(noParamsQN)
+	entries, ok := gc.index.FindOverloadCandidates(noParamsQN)
+	if !ok {
+		return nil, false
+	}
+	return append([]*DefinitionEntry(nil), entries...), true
 }
 
 // BuildQualifiedName 委托 Builder 拼接 QN。

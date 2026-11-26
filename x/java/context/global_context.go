@@ -20,16 +20,17 @@ func NewGlobalContext(resolver core.SymbolResolver, builder core.SymbolBuilder) 
 	}
 }
 
-// RegisterFileContext 先注册包层级，再登记文件内定义。
+// RegisterFileContext 先注册包层级，再登记文件内定义（同一把写锁内完成）。
 func (gc *GlobalContext) RegisterFileContext(fc core.FileContext) {
-	if pfc, ok := fc.(PackageAwareFileContext); ok {
-		if name := pfc.PackageName(); name != "" {
-			gc.registerPackage(name)
-		} else {
-			gc.registerDefaultPackage()
+	gc.RegisterFileContextWith(fc, func() {
+		if pfc, ok := fc.(PackageAwareFileContext); ok {
+			if name := pfc.PackageName(); name != "" {
+				gc.registerPackage(name)
+			} else {
+				gc.registerDefaultPackage()
+			}
 		}
-	}
-	gc.BaseGlobalContext.RegisterFileContext(fc)
+	})
 }
 
 // registerPackage 将点号包名拆分为逐级 PACKAGE 元素（Java 专属语义）。
@@ -52,11 +53,12 @@ func (gc *GlobalContext) registerDefaultPackage() {
 }
 
 // addPackageElem 注册一个 PACKAGE 元素（幂等）。
+// 调用方已持写锁，故使用 *Locked 变体。
 func (gc *GlobalContext) addPackageElem(name, pkgQN string) {
-	if _, ok := gc.FindByQualifiedName(pkgQN); ok {
+	if _, ok := gc.FindByQualifiedNameLocked(pkgQN); ok {
 		return
 	}
-	gc.AddDefinition(&core.DefinitionEntry{
+	gc.AddDefinitionLocked(&core.DefinitionEntry{
 		Element: &model.CodeElement{
 			Kind:          model.Package,
 			Name:          name,
