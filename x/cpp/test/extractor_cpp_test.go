@@ -765,3 +765,15 @@ func TestExtractorCppOutOfLineFileRoot(t *testing.T) {
 		})
 	}
 }
+
+// TestExtractorCppRecursionCall 递归调用（fact 调 fact）是真实控制流边，
+// 不得被通用自引用守卫丢弃，必须产出自环 CALL。
+func TestExtractorCppRecursionCall(t *testing.T) {
+	paths := ResolvePaths(t, "collector/c/func", "*.c")
+	_, rels := RunExtraction(t, "x/cpp/testdata", paths)
+
+	FindRel(t, rels, func(r *model.DependencyRelation) bool {
+		return r.Type == model.Call && r.Source.QualifiedName == "fact(int)" &&
+			r.Target.QualifiedName == "fact(int)"
+	})
+}

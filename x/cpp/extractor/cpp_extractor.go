@@ -584,7 +584,8 @@ func (ac *actionCtx) add(relType model.DependencyType, source, target *model.Cod
 		return
 	}
 	// 全局变量初始化（int g = 0;）的发起者即变量自身，自赋值不产关系。
-	if source.QualifiedName == target.QualifiedName {
+	// 例外：函数递归调用（fact 调 fact）是真实控制流边，需保留。
+	if source.QualifiedName == target.QualifiedName && relType != model.Call {
 		return
 	}
 	// #if 0 死区内的动作不产关系。
