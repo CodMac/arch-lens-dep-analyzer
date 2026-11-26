@@ -675,6 +675,38 @@ func TestResolverCppUsingAlias(t *testing.T) {
 	}
 }
 
+// TestResolverCppMemberTypeFallback 接收者未知的成员访问不回退按成员名查类型。
+func TestResolverCppMemberTypeFallback(t *testing.T) {
+	paths := ResolvePaths(t, "resolver/cpp/member_type_fallback", "*.cpp")
+	ec := RunPipeline(t, "x/cpp/testdata", paths, core.LevelRaw)
+
+	for _, r := range ec.Relations {
+		if r.Source.QualifiedName != "g()" {
+			continue
+		}
+		if r.Type == model.Call && r.Target.QualifiedName == "field::run()" {
+			t.Errorf("zz.field.run should not resolve via member name as type field")
+		}
+	}
+}
+
+// TestResolverCppGlobalFallbackArgCount 全局短名回退按实参个数挑选重载。
+func TestResolverCppGlobalFallbackArgCount(t *testing.T) {
+	paths := ResolvePaths(t, "resolver/cpp/global_fallback", "*.cpp")
+	ec := RunPipeline(t, "x/cpp/testdata", paths, core.LevelRaw)
+
+	FindRel(t, ec.Relations, func(r *model.DependencyRelation) bool {
+		return r.Type == model.Call && r.Source.QualifiedName == "caller()" &&
+			r.Target.QualifiedName == "ns::h(int,int)"
+	})
+	for _, r := range ec.Relations {
+		if r.Type == model.Call && r.Source.QualifiedName == "caller()" &&
+			r.Target.QualifiedName == "ns::h(int)" {
+			t.Errorf("caller() should not resolve h(1,2) to 1-arg overload")
+		}
+	}
+}
+
 // TestResolverCppReturnExternalChain 返回类型链式调用：外部返回类型按外部
 // 类型归属接收者，源码内返回类型仍按源码类型解析。
 func TestResolverCppReturnExternalChain(t *testing.T) {

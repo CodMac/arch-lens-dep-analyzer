@@ -17,6 +17,7 @@
 package symbol_resolver
 
 import (
+	"sort"
 	"strings"
 
 	"github.com/CodMac/arch-lens-dep-analyzer/core"
@@ -449,7 +450,7 @@ func (r *SymbolResolver) resolveValue(gc core.GlobalContext, fc core.FileContext
 	}
 	if e.recv != nil {
 		if recvType := r.typeOf(gc, fc, e.recv); recvType != nil {
-			if elem := r.lookupMember(gc, fc, recvType, e.name, model.Field); elem != nil {
+			if elem := r.lookupMember(gc, fc, recvType, e.name); elem != nil {
 				return elem
 			}
 			// 命名空间接收者：成员可能位于 inline namespace 内，保留作用域回退。
@@ -518,6 +519,10 @@ func (r *SymbolResolver) typeOf(gc core.GlobalContext, fc core.FileContext, e *e
 		// 裸标识符/成员作接收者时通常是变量（obj.method()），变量优先于同名类型。
 		if t := r.declaredTypeOf(gc, fc, r.resolveValue(gc, fc, e)); t != nil {
 			return t
+		}
+		// 成员名不是类型名：obj.field 的接收者类型未知时不回退按成员名查类型。
+		if e.form == formMember {
+			return nil
 		}
 		return r.lookupTypeAt(gc, fc, e.node, helper.BaseTypeName(e.name))
 	}
@@ -695,8 +700,8 @@ func (r *SymbolResolver) lookupType(gc core.GlobalContext, fc core.FileContext, 
 			}
 		}
 	}
-	// 全局短名（跨文件）。
-	for _, def := range gc.FindByShortName(name) {
+	// 全局短名（跨文件）。按 QN 排序，避免同名类型命中依赖注册顺序。
+	for _, def := range sortedByQN(gc.FindByShortName(name)) {
 		if isTypeKind(def.Element.Kind) {
 			return def.Element
 		}
@@ -704,8 +709,17 @@ func (r *SymbolResolver) lookupType(gc core.GlobalContext, fc core.FileContext, 
 	return nil
 }
 
+// sortedByQN 返回按限定名排序的副本，消除跨文件同名符号对注册顺序的依赖。
+func sortedByQN(defs []*core.DefinitionEntry) []*core.DefinitionEntry {
+	out := append([]*core.DefinitionEntry(nil), defs...)
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].Element.QualifiedName < out[j].Element.QualifiedName
+	})
+	return out
+}
+
 // lookupMember 在类型（含基类）中查找字段/枚举常量。
-func (r *SymbolResolver) lookupMember(gc core.GlobalContext, fc core.FileContext, owner *model.CodeElement, name string, want model.ElementKind) *model.CodeElement {
+func (r *SymbolResolver) lookupMember(gc core.GlobalContext, fc core.FileContext, owner *model.CodeElement, name string) *model.CodeElement {
 	for _, o := range r.typeChain(gc, fc, owner, 0) {
 		qn := helper.BuildQN(o.QualifiedName, name)
 		for _, entry := range gc.FindAllByQualifiedName(qn) {
@@ -929,10 +943,10 @@ func (r *SymbolResolver) lookupScopedSymbol(gc core.GlobalContext, fc core.FileC
 			}
 		}
 	}
-	// 全局短名（跨文件全局变量/枚举常量）。
+	// 全局短名（跨文件全局变量/枚举常量）。按 QN 排序，避免命中依赖注册顺序。
 	// 必须排除局部变量与类字段：它们不具全局可见性，按短名跨文件命中会
 	// 把 `std::runtime_error(...)` 的 `std` 误解析为别的文件里的局部变量。
-	for _, def := range gc.FindByShortName(name) {
+	for _, def := range sortedByQN(gc.FindByShortName(name)) {
 		switch def.Element.Kind {
 		case model.EnumConstant:
 			return def.Element
@@ -972,18 +986,31 @@ func (r *SymbolResolver) lookupScopedFunc(gc core.GlobalContext, fc core.FileCon
 			}
 		}
 	}
-	// 文件内短名（static 函数）。
+	// 文件内短名（static 函数）。按实参个数挑选重载。
 	if entries, ok := fc.FindByShortName(name); ok {
+		var funcs []*core.DefinitionEntry
 		for _, e := range entries {
 			if isFunctionKind(e.Element.Kind) {
+				funcs = append(funcs, e)
+			}
+		}
+		if len(funcs) > 0 {
+			if e := pickOverload(funcs, argCount); e != nil {
 				return e.Element
 			}
 		}
 	}
-	// 全局短名。
+	// 全局短名（跨文件）。按 QN 排序并按实参个数挑选重载，
+	// 避免结果依赖注册顺序、忽略实参个数。
+	var funcs []*core.DefinitionEntry
 	for _, def := range gc.FindByShortName(name) {
 		if isFunctionKind(def.Element.Kind) {
-			return def.Element
+			funcs = append(funcs, def)
+		}
+	}
+	if len(funcs) > 0 {
+		if e := pickOverload(sortedByQN(funcs), argCount); e != nil {
+			return e.Element
 		}
 	}
 	return nil

@@ -533,9 +533,9 @@ Binder 负责 raw 类型文本 → QN。以下缺陷均经探针实测，按优�
 | R-5 | ~~P2~~ 已修复 | **using 声明 / namespace 别名不参与解析** | **修复**：Collector 记录 `using ns::name;` 与 `namespace na = ns;`（`cppctx.UsingAware`）；Resolver 在全局作用域查找前优先命中 using 引入的目标，类型查找与 Binder 的 `type_with_qn` 同样展开；`na::f()` 按别名目标命名空间解析（`TestResolverCppUsingAlias`） |
 | R-6 | P2 | **智能指针/包装类型不解包** | `std::unique_ptr<Svc> p; p->run()` → `std::unique_ptr::run`（外部方法） |
 | R-7 | P2 | **auto/decltype 不推导** | `auto s = make(); s.run()` 靠文件短名唯一碰巧命中 `Svc::run`，同名方法存在时误命中 |
-| R-8 | P3 | **typeOf(formMember) 用成员名查类型** | 接收者未知的 `obj.field` 回退 `lookupType("field")`，可能把成员名当类型 |
-| R-9 | P3 | **lookupMember 的 want 参数未使用** | 死参数 |
-| R-10 | P3 | **全局短名回退 O(defs) 且取首个** | 跨文件同名类型/函数结果依赖收集顺序；`lookupScopedFunc` 全局回退忽略实参个数 |
+| R-8 | ~~P3~~ 已修复 | **typeOf(formMember) 用成员名查类型** | **修复**：`formMember` 接收者类型未知时不再回退 `lookupType(成员名)`（`zz.field.run()` 不再把 `field` 当类型，`TestResolverCppMemberTypeFallback`） |
+| R-9 | ~~P3~~ 已修复 | **lookupMember 的 want 参数未使用** | **修复**：删除死参数 `want` |
+| R-10 | ~~P3~~ 已修复 | **全局短名回退 O(defs) 且取首个** | **修复**：文件/全局短名回退按 QN 排序消除注册顺序依赖，函数回退按实参个数挑选重载（`TestResolverCppGlobalFallbackArgCount`） |
 | R-11 | 边界 | 函数指针/成员函数指针/delete/虚派发 | `fp(1)` 无 CALL；`(s->*pm)(1)` 产畸形外部 CALL `s->*`；`delete p` 无关系；虚函数按静态类型解析 |
 | R-12 | P3 | Resolver 专用测试缺上述边界 | 现有 calls/create/use/assign/cast/chain/forms/overload/inherit/scope/external/lambda/throw 未覆盖 this->、作用域化类型、using/别名、外部返回链、未知接收者 |
 
@@ -558,9 +558,9 @@ Binder 负责 raw 类型文本 → QN。以下缺陷均经探针实测，按优�
 
 - 三层测试 + e2e 黄金回归集，全部位于 `x/cpp/test/`。
 - 测试文件按语言归属拆分：`*_base_test.go`（C/C++ 共享）、`*_c_test.go`（C 独有）、`*_cpp_test.go`（C++ 独有）；共享断言集中在 `assert_helper.go`。
-- e2e 基线：`x/cpp/testdata/e2e/baseline.golden.jsonl`（1726 元素 + 3245 关系，LevelBalanced）。
-- 元素覆盖（基线实测）：FILE 118 / NAMESPACE 66 / CLASS 30 / STRUCT 147 / ENUM 22 / ENUM_CONSTANT 49 / TYPE 42 / MACRO 53 / FIELD 206 / FUNCTION 175 / FUNCTION_DECL 68 / METHOD 89 / METHOD_DECL 99 / VARIABLE 495 / SCOPE_BLOCK 39 / LAMBDA 28。
-- 关系覆盖（基线实测）：CONTAIN 2105 / USE 388 / ASSIGN 194 / TYPE_ARG 133 / CALL 96 / IMPL_LINK 89 / PARAMETER 73 / IMPORT 45 / RETURN 37 / EXTEND 29 / CAPTURE 24 / CAST 15 / CREATE 8 / THROW 7 / FRIEND 2。
+- e2e 基线：`x/cpp/testdata/e2e/baseline.golden.jsonl`（1733 元素 + 3256 关系，LevelBalanced）。
+- 元素覆盖（基线实测）：FILE 120 / NAMESPACE 67 / CLASS 30 / STRUCT 148 / ENUM 22 / ENUM_CONSTANT 49 / TYPE 42 / MACRO 53 / FIELD 206 / FUNCTION 175 / FUNCTION_DECL 70 / METHOD 89 / METHOD_DECL 100 / VARIABLE 495 / SCOPE_BLOCK 39 / LAMBDA 28。
+- 关系覆盖（基线实测）：CONTAIN 2115 / USE 388 / ASSIGN 194 / TYPE_ARG 133 / CALL 97 / IMPL_LINK 89 / PARAMETER 73 / IMPORT 45 / RETURN 37 / EXTEND 29 / CAPTURE 24 / CAST 15 / CREATE 8 / THROW 7 / FRIEND 2。
 - 基线（LevelBalanced）中 PARAMETER/RETURN 大幅减少，是因为当前样例的参数/返回类型多为基本类型（`int`/`void`），被外部符号降噪过滤；CONTAIN/USE/ASSIGN 等指向源码符号的关系不受影响。
 - 测试用例：
   | 测试 | 覆盖 |
