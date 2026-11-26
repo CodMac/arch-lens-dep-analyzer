@@ -520,6 +520,23 @@ Binder 负责 raw 类型文本 → QN。以下缺陷均经探针实测，按优�
 | L-3 | 无 OVERRIDE 关系 | `model.OVERRIDE` 全项目未产出；C++ 虚函数覆盖需 Collector 建模 `virtual`/`override`，非 Linker 单层可解 |
 | L-4 | ImplLink 无 Location | 仅记签名，定位由 Source/Target 元素承载 |
 
+### 7.5 Resolver 阶段的已知 Gap（2026-11-25 审计，待修复）
+
+| # | 优先级 | Gap | 实测证据 |
+|---|---|---|---|
+| R-1 | P1 | **ResolveType 无使用作用域** | `namespace B` 内 `struct D : Foo`、`new Foo()`、`(Foo*)p`、`throw Foo()` 均解析到 `A::Foo`（应为 `B::Foo`）；同函数参数因走 Binder WithQN 正确，形成不对称 |
+| R-2 | P1 | **`this->` 不按宿主类型解析** | `Derived::f` 中 `this->m()` → `X::m()`、`this->fld` → `X::fld`（同文件另有同名成员的 X 类） |
+| R-3 | P1 | **接收者类型未知时忽略接收者回退非限定查找** | `zz.freeFn(1)`（zz 未声明）→ `freeFn(int)`；`zz.baseField = 1` → `Base::baseField` |
+| R-4 | P2 | **returnTypeOf 不回退外部类型** | `std::string name(); name().size()` → `name()::size` 而非 `std::string::size` |
+| R-5 | P2 | **using 声明 / namespace 别名不参与解析** | `using ns2::f; f(1)` → `ns1::f`；`using ns2::v; v=2` → `ns1::v`；`namespace na=ns1; na::f()` 靠短名顺序碰巧正确 |
+| R-6 | P2 | **智能指针/包装类型不解包** | `std::unique_ptr<Svc> p; p->run()` → `std::unique_ptr::run`（外部方法） |
+| R-7 | P2 | **auto/decltype 不推导** | `auto s = make(); s.run()` 靠文件短名唯一碰巧命中 `Svc::run`，同名方法存在时误命中 |
+| R-8 | P3 | **typeOf(formMember) 用成员名查类型** | 接收者未知的 `obj.field` 回退 `lookupType("field")`，可能把成员名当类型 |
+| R-9 | P3 | **lookupMember 的 want 参数未使用** | 死参数 |
+| R-10 | P3 | **全局短名回退 O(defs) 且取首个** | 跨文件同名类型/函数结果依赖收集顺序；`lookupScopedFunc` 全局回退忽略实参个数 |
+| R-11 | 边界 | 函数指针/成员函数指针/delete/虚派发 | `fp(1)` 无 CALL；`(s->*pm)(1)` 产畸形外部 CALL `s->*`；`delete p` 无关系；虚函数按静态类型解析 |
+| R-12 | P3 | Resolver 专用测试缺上述边界 | 现有 calls/create/use/assign/cast/chain/forms/overload/inherit/scope/external/lambda/throw 未覆盖 this->、作用域化类型、using/别名、外部返回链、未知接收者 |
+
 ## 8. 与 SPI 契约的对应
 
 | SPI | C/C++ 实现 | 说明 |

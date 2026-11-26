@@ -7,3 +7,5 @@
 /.run
 /.temptool/
 /.patchs/
+/x/java/testdata/e2e/
+/x/cpp/testdata/e2e/

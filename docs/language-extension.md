@@ -183,3 +183,70 @@ type SourceFile interface {
 | 编译期自注册 | 最灵活 | Go 无原生支持，复杂度高 |
 
 选择「注册表 + init()」：Go 的 init() 保证所有依赖包先初始化，注册顺序稳定；`import _` 接入方式对使用者最友好。
+
+## 8. 上下文基类的语言泄漏与已知 Gap（2026-11-25 审计，待修复）
+
+`core.BaseFileContext` / `core.BaseGlobalContext` 目前承载了**语言语义**：索引主键、声明/定义替换规则、重载索引 kind 都由 core 硬编码。这与「core 只保留语言无关契约」的分层目标冲突，审计出以下 Gap。
+
+### 8.1 索引主键应下沉
+
+| 位置 | 当前主键 | 编码的语言语义 |
+|---|---|---|
+| `BaseFileContext.declDefIndex` | `QN + "\|" + Kind` | C/C++ 同文件「声明 → 定义」原地替换 |
+| `BaseGlobalContext.qnIndex` | `QN + "\|" + Kind + "\|" + Path` | C/C++ 声明/定义共存 + 跨文件同名（static/main/amalgamation）共存 |
+| `BaseGlobalContext.primaryIndex` | 裸 `QN` | 「定义优先、纯声明回填」查找语义 |
+| `BaseGlobalContext.overloadIndex` | 去参 `QN` | 仅 C/C++ 需要；Java 只有 Method |
+
+`qnIndex` / `primaryIndex` / `overloadIndex` 及其读写方法（`addDefinitionLocked`、`replaceDefinitionLocked`、`FindOverloadCandidates`）都应从 Base 下沉到语言实现；`GlobalContextRules` 只下沉 `OverloadKinds` 属于「半下沉」，无法表达主键与替换策略差异。
+
+**建议下沉形态**：语言实现注入 `IndexPolicy`——
+
+```go
+type IndexPolicy interface {
+    DefinitionKey(def *DefinitionEntry) string   // 全量索引键
+    ShouldReplace(old, new *DefinitionEntry) bool // 声明→定义覆盖
+    OverloadKey(def *DefinitionEntry) (string, bool) // 去参 QN，false 表示不参与
+}
+```
+
+Base 只保留 `fileContexts` / `definitions` 容器与锁，索引结构由策略决定。
+
+### 8.2 文件上下文（`core/file_context.go`）
+
+| # | 优先级 | Gap | 说明 |
+|---|---|---|---|
+| F-1 | P1 | `qualifiedNameMap` 只按 QN 索引 | 与 `declDefIndex` 的 `QN+Kind` 不一致：C++ 同 QN 不同 Kind（`FUNCTION` / `FUNCTION_DECL`）时后者覆盖前者，`FindByQualifiedName` 只能命中一个，另一 Kind 不可达 |
+| F-2 | P1 | 声明/定义替换语义在 core | `AddDefinition` 内 `old.IsDeclaration && !def.IsDeclaration` 是 C/C++ 语义，Java 无此概念 |
+| F-3 | P2 | `PackageAwareFileContext` 在 core | 单包语义能力接口放在 core，而多命名空间的 `NamespaceAware` 在 `x/cpp`，同类能力两种归属 |
+| F-4 | P2 | `DefinitionEntry.IsDeclaration` 在 core | 声明/定义双元素是 C/C++ 概念，Java 恒 false |
+| F-5 | P2 | `Imports` 以短名为键 | Java 键是 import 简单名，C++ 键是 include basename，语义不同却共用一个契约 |
+| F-6 | P3 | 返回内部切片/映射 | `Definitions()`、`Imports()`、`FindByShortName`、`FindByKind` 直接返回内部引用，调用方可篡改 |
+| F-7 | P3 | 零值 `BaseFileContext` 不安全 | 未走 `NewBaseFileContext` 时 map 为 nil，`AddDefinition` 会 panic（仅 `declDefIndex` 有惰性初始化） |
+
+### 8.3 全局上下文（`core/global_context.go`）
+
+| # | 优先级 | Gap | 说明 |
+|---|---|---|---|
+| G-1 | **P0** | 注册顺序不确定 → 解析结果随机 | Collector 并行调用 `RegisterFileContext`（`engine/stage.go`），`primaryIndex` 先到先得。实测：`a.cpp`/`b.cpp` 各定义 `struct Dup`，`c.cpp` 的 `new Dup()` 连续 6 次命中 `a,b,a,b,a,a` |
+| G-2 | P1 | 全局查找 Kind 盲 | `FindByQualifiedName` 只按 QN，类型/函数/变量同 QN 时无 Kind 维度；`FindByKind` 仅文件级有 |
+| G-3 | P1 | 无全局短名/按 Kind 索引 | 语言侧只能 `Definitions()` 全量扫描（O(defs)）做短名回退 |
+| G-4 | P2 | `RegisterFileContext` 非模板方法 | Java 覆盖后「先注册包 → 再委托 Base」两段各自加锁，非原子，且子类必须知道 Base 的调用顺序 |
+| G-5 | P2 | `addDefinitionLocked` / `replaceDefinitionLocked` 不可复用 | 未导出，语言实现无法在保持锁语义的前提下定制索引 |
+| G-6 | P3 | `FindOverloadCandidates` 返回内部切片 | 调用方可篡改索引 |
+| G-7 | P3 | 替换与 `qnIndex` 更新耦合 | `addDefinitionLocked` 内手工同步 `qnIndex`/`primaryIndex`/`overloadIndex` 三处，新增索引易漏 |
+| G-8 | P3 | `primaryIndex` 折叠跨文件同名 QN | 折叠后无公开 API 取「全部同名定义」，语言侧无法显式处理歧义 |
+| G-9 | P3 | `GlobalContextRules` 策略不足 | 只有 `OverloadKinds`，无法表达主键/替换/可见性策略 |
+
+### 8.4 可见性
+
+| # | 优先级 | Gap | 说明 |
+|---|---|---|---|
+| V-1 | P1 | 全局上下文无「按文件可见性」视图 | Java 在语言层用 `fc.Imports()` 做 import 可见性；C++ 无对应能力（对应 `languages/cpp.md` B-7），只能全局短名回退，跨文件同名即误命中 |
+| V-2 | P2 | 缺统一可见性能力契约 | 可见性规则（import / include / namespace / package 私有）散落在各语言 Resolver，无公共可选能力接口 |
+
+### 8.5 修复优先级
+
+- **P0**：G-1（注册顺序确定化：按路径排序注册 + 歧义显式判 nil，禁止「先到先得」）。
+- **P1**：主键与三索引下沉（`IndexPolicy`）、F-1、G-2、G-3、V-1。
+- **P2**：F-3/F-4/F-5、G-4/G-5/G-6、V-2。
+- **P3**：F-6/F-7、G-7/G-8/G-9。
