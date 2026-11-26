@@ -3,6 +3,7 @@ package engine
 import (
 	"fmt"
 	"path/filepath"
+	"sort"
 	"sync"
 	"time"
 
@@ -33,10 +34,17 @@ func (s *CollectorStage) Concurrent() bool { return true }
 // Execute 并行收集。
 // 注意：解析/收集使用扫描得到的绝对路径，但 FileContext 内部统一以相对项目根的
 // 路径登记（与 Extractor 的查找键、Linker/Exporter 的展示一致）。
+//
+// 注册顺序确定性：并行完成的文件上下文先暂存，全部完成后按相对路径排序再串行注册。
+// 全局索引（如「定义优先」主索引）对同 QN 先到先得，若按完成顺序注册，跨文件同名
+// 符号的解析结果会随调度抖动（同一份代码每次分析可能不同）。排序注册使结果可复现。
 func (s *CollectorStage) Execute(ec *EngineContext) error {
 	absRoot, _ := filepath.Abs(ec.Config.RootPath)
 
-	return s.scheduler.Run(ec.Config.FilePaths, func(path string, p core.Parser) error {
+	var mu sync.Mutex
+	var pending []collectedFile
+
+	err := s.scheduler.Run(ec.Config.FilePaths, func(path string, p core.Parser) error {
 		relPath := relPathOf(absRoot, path)
 		start := time.Now()
 
@@ -59,10 +67,25 @@ func (s *CollectorStage) Execute(ec *EngineContext) error {
 		}
 		normalizeFilePath(fc, relPath)
 
-		ec.GC.RegisterFileContext(fc)
+		mu.Lock()
+		pending = append(pending, collectedFile{relPath: relPath, fc: fc})
+		mu.Unlock()
 		ec.markFileSuccess(relPath, len(fc.Definitions()), time.Since(start))
 		return nil
 	})
+
+	// 按相对路径排序后串行注册，保证全局索引与定义顺序可复现。
+	sort.Slice(pending, func(i, j int) bool { return pending[i].relPath < pending[j].relPath })
+	for _, c := range pending {
+		ec.GC.RegisterFileContext(c.fc)
+	}
+	return err
+}
+
+// collectedFile 是并行收集阶段暂存的文件上下文，待排序后统一注册。
+type collectedFile struct {
+	relPath string
+	fc      core.FileContext
 }
 
 // relPathOf 返回 path 相对项目根的 '/' 分隔路径；无法相对化时退回原路径。
