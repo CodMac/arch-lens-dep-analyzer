@@ -612,3 +612,26 @@ func TestResolverCppThisPtr(t *testing.T) {
 		}
 	}
 }
+
+// TestResolverCppUnknownReceiver 接收者类型未知时不回退非限定查找。
+func TestResolverCppUnknownReceiver(t *testing.T) {
+	paths := ResolvePaths(t, "resolver/cpp/unknown_recv", "*.cpp")
+	ec := RunPipeline(t, "x/cpp/testdata", paths, core.LevelRaw)
+
+	for _, r := range ec.Relations {
+		if r.Source.QualifiedName != "g()" {
+			continue
+		}
+		if r.Type == model.Call && r.Target.QualifiedName == "freeFn(int)" {
+			t.Errorf("zz.freeFn should not resolve to global freeFn(int)")
+		}
+		if r.Type == model.Assign && r.Target.QualifiedName == "Base::baseField" {
+			t.Errorf("zz.baseField should not resolve to Base::baseField")
+		}
+	}
+	// 调用仍应产外部方法 zz::freeFn（保留接收者原文）。
+	FindRel(t, ec.Relations, func(r *model.DependencyRelation) bool {
+		return r.Type == model.Call && r.Source.QualifiedName == "g()" &&
+			r.Target.QualifiedName == "zz::freeFn" && r.Target.IsFormExternal
+	})
+}

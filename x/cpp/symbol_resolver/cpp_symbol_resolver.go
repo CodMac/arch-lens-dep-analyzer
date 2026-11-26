@@ -406,12 +406,21 @@ func (r *SymbolResolver) resolveFunc(gc core.GlobalContext, fc core.FileContext,
 			return elem
 		}
 	}
-	if recvType := r.typeOf(gc, fc, e.recv); recvType != nil {
-		if elem := r.lookupMemberFunc(gc, fc, recvType, e.name, e.argc); elem != nil {
-			return elem
+	if e.recv != nil {
+		if recvType := r.typeOf(gc, fc, e.recv); recvType != nil {
+			if elem := r.lookupMemberFunc(gc, fc, recvType, e.name, e.argc); elem != nil {
+				return elem
+			}
+			// 命名空间接收者：成员可能位于 inline namespace 内，保留作用域回退。
+			if recvType.Kind == model.Namespace {
+				return r.lookupScopedFunc(gc, fc, e.node, e.name, e.argc)
+			}
+			// 外部接收者类型：产外部方法。
+			return helper.NewExternalElement(model.Method, e.name, helper.BuildQN(recvType.QualifiedName, e.name))
 		}
-		// 外部接收者类型：产外部方法。
-		return helper.NewExternalElement(model.Method, e.name, helper.BuildQN(recvType.QualifiedName, e.name))
+		// 接收者存在但类型未知：不能忽略接收者按非限定名查找
+		// （否则 zz.freeFn() 会误命中全局 freeFn）。
+		return nil
 	}
 	if elem := r.lookupScopedFunc(gc, fc, e.node, e.name, e.argc); elem != nil {
 		return elem
@@ -438,10 +447,19 @@ func (r *SymbolResolver) resolveValue(gc core.GlobalContext, fc core.FileContext
 	if e == nil || e.name == "" {
 		return nil
 	}
-	if recvType := r.typeOf(gc, fc, e.recv); recvType != nil {
-		if elem := r.lookupMember(gc, fc, recvType, e.name, model.Field); elem != nil {
-			return elem
+	if e.recv != nil {
+		if recvType := r.typeOf(gc, fc, e.recv); recvType != nil {
+			if elem := r.lookupMember(gc, fc, recvType, e.name, model.Field); elem != nil {
+				return elem
+			}
+			// 命名空间接收者：成员可能位于 inline namespace 内，保留作用域回退。
+			if recvType.Kind == model.Namespace {
+				return r.lookupScopedSymbol(gc, fc, e.node, e.name)
+			}
+			return nil
 		}
+		// 接收者存在但类型未知：不按非限定名查找（zz.baseField 不应命中 Base::baseField）。
+		return nil
 	}
 	return r.lookupScopedSymbol(gc, fc, e.node, e.name)
 }
