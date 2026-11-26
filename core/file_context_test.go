@@ -10,6 +10,7 @@ import (
 // FindByQualifiedName 必须定义优先，且不随后注册顺序变化。
 func TestFileContextQNIndexDefinitionPriority(t *testing.T) {
 	fc := NewBaseFileContext("a.cpp", nil, nil)
+	fc.SetIndexPolicy(testFilePolicy{})
 	// 先注册定义、后注册声明：单值 QN 索引会被后到的声明覆盖。
 	fc.AddDefinition(def("S::m()", "a.cpp", model.Method))
 	fc.AddDefinition(def("S::m()", "a.cpp", model.MethodDecl))
@@ -32,8 +33,9 @@ func TestFileContextQNIndexDefinitionPriority(t *testing.T) {
 // （C：`struct Fwd;` 后 `struct Fwd {};`）。
 func TestFileContextDeclDefReplaceSameKind(t *testing.T) {
 	fc := NewBaseFileContext("a.c", nil, nil)
+	fc.SetIndexPolicy(testFilePolicy{})
 	decl := def("Fwd", "a.c", model.Struct)
-	decl.IsDeclaration = true
+	decl.Element.GetMores()[testIsDeclKey] = true
 	fc.AddDefinition(decl)
 	fc.AddDefinition(def("Fwd", "a.c", model.Struct))
 
@@ -41,7 +43,7 @@ func TestFileContextDeclDefReplaceSameKind(t *testing.T) {
 		t.Fatalf("expected in-place replace, got %d definitions", got)
 	}
 	entry, ok := fc.FindByQualifiedName("Fwd")
-	if !ok || entry.IsDeclaration {
+	if !ok || isDeclEntry(entry) {
 		t.Fatalf("expected definition after replace, got %+v", entry)
 	}
 }

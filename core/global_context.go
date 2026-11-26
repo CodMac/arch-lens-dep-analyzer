@@ -12,10 +12,6 @@ type DefinitionEntry struct {
 	Element  *model.CodeElement
 	ParentQN string
 
-	// IsDeclaration 标记该条目是「声明」而非「定义」（C/C++ 前向声明、函数原型、extern 变量）。
-	// 声明与定义共享同一 QN + Kind 时，索引保留定义（后到的定义原地覆盖先到的声明）。
-	IsDeclaration bool
-
 	// Node 保留该定义锚定的 AST 节点（元数据填充/作用域修正/语法糖处理用）。
 	// 仅语言实现内部使用，引擎不负责清理（FileContext 随文件生命周期释放）。
 	Node coreast.Node
@@ -45,7 +41,7 @@ type GlobalContext interface {
 
 	// FindByQualifiedName 按限定名查找定义。
 	// 声明/定义分离语言（C/C++）中同一 QN 可能存在声明+定义两个元素，
-	// 此方法返回「定义优先」：优先非声明条目（由 DefinitionEntry.IsDeclaration 判定）。
+	// 此方法返回「定义优先」：优先非声明条目（由语言 DefinitionIndex 判定）。
 	FindByQualifiedName(qn string) (*DefinitionEntry, bool)
 
 	// FindAllByQualifiedName 按限定名返回全部定义（定义优先排序）。

@@ -100,11 +100,8 @@ type FileContext interface {
     FindByKind(model.ElementKind) ([]*DefinitionEntry, bool)
 }
 
-// 可选能力接口：单包语义的语言（Java）实现
-type PackageAwareFileContext interface {
-    FileContext
-    PackageName() string; SetPackageName(string)
-}
+// 可选能力接口归语言包所有：x/java/context.PackageAwareFileContext、
+// cppctx.NamespaceAware；core 不含语言概念。
 
 // 通用导入信息：语言专属属性走 Attrs（core 不解释语义）
 type ImportInfo struct {
@@ -123,6 +120,8 @@ type GlobalContext interface {
     Definitions() []*DefinitionEntry
     AddDefinition(*DefinitionEntry)
     FindByQualifiedName(qn string) (*DefinitionEntry, bool)
+    FindAllByQualifiedName(qn string) []*DefinitionEntry
+    FindByShortName(name string) []*DefinitionEntry
     FindOverloadCandidates(noParamsQN string) ([]*DefinitionEntry, bool)
     BuildQualifiedName(parentQN, name string) string
     Resolver() SymbolResolver
@@ -133,7 +132,20 @@ type GlobalContext interface {
 type DefinitionIndex interface {
     Add(def *DefinitionEntry) (replaced *DefinitionEntry, added bool)
     FindByQualifiedName(qn string) (*DefinitionEntry, bool)
+    FindAllByQualifiedName(qn string) []*DefinitionEntry
+    FindByShortName(name string) []*DefinitionEntry
     FindOverloadCandidates(noParamsQN string) ([]*DefinitionEntry, bool)
+}
+
+// 文件级声明/定义策略（C/C++ 注入；Java 不设置）
+type FileIndexPolicy interface {
+    ShouldReplace(old, new *DefinitionEntry) bool
+    IsDefinition(entry *DefinitionEntry) bool
+}
+
+// 可选能力：按文件可见性视图
+type FileVisibility interface {
+    VisibleDefinitions(fromFile string) []*DefinitionEntry
 }
 ```
 
@@ -141,7 +153,7 @@ type DefinitionIndex interface {
 
 | 层 | 位置 | 内容 |
 |---|---|---|
-| 契约 | `core/*_context.go` | `FileContext` / `GlobalContext` / `DefinitionIndex` 接口、`ImportInfo` |
+| 契约 | `core/*_context.go` | `FileContext` / `GlobalContext` / `DefinitionIndex` / `FileIndexPolicy` / `FileVisibility` 接口、`ImportInfo` |
 | 通用底座 | `core.BaseFileContext` / `core.BaseGlobalContext` | 容器与锁；`BaseGlobalContext` 按 `DefinitionIndex` 结果维护定义切片 |
 | 语言实现 | `x/java/context`、`x/cpp/context` | 内嵌 Base + 覆盖 `RegisterFileContext` + 提供 `DefinitionIndex`（索引主键/声明-定义替换/重载 kind）；Java 实现 `PackageAwareFileContext`；C++ 实现 `NamespaceAware` |
 | 编排 | `engine` | 只面向 core 接口；经 `LanguageImpl.NewGlobalContext` 取得语言实现 |
@@ -150,15 +162,15 @@ type DefinitionIndex interface {
 
 | 差异 | Java | C/C++ |
 |---|---|---|
-| 上下文可选能力 | `PackageAwareFileContext`（单包） | `cppctx.NamespaceAware`（多 namespace） |
+| 上下文可选能力 | `javactx.PackageAwareFileContext`（单包） | `cppctx.NamespaceAware`（多 namespace） |
 | 包/命名空间注册 | `RegisterFileContext` 内按 `.` 拆 PACKAGE | NAMESPACE 由 Collector 建元素，无需注册 |
 | 重载索引 kind | `{Method}` | `{Method, Function, MethodDecl, FunctionDecl}` |
 | 导入属性 | `Attrs["java.import.is_wildcard"]` | `Attrs["cpp.include.is_system"]` |
 
 **通用机制（core 内，语言无关）**
 
-- **声明/定义共存（G2）**：`BaseGlobalContext` 全量索引键为 `QN + "|" + Kind`，使 `add(int,int)|FUNCTION_DECL` 与 `add(int,int)|FUNCTION` 共存；主索引 `primaryIndex` 保持「定义优先」，但纯声明（无定义）仍可命中。
-- **声明 → 定义原地替换（G2 补强）**：`DefinitionEntry.IsDeclaration` 标记声明条目；同一 `QN + Kind` 下（如 `struct Fwd;` 后接 `struct Fwd {};`、`extern int x;` 后接 `int x;`），后到的定义原地替换先到的声明，FileContext 与 GlobalContext 的索引同步更新，避免前向声明遮蔽真实定义。该判定只看 `IsDeclaration` 字段，与语言 kind 无关。
+- **声明/定义共存（G2）**：C/C++ 的 `DefinitionIndex` 全量索引键为 `QN|Kind|Path`，使 `add(int,int)|FUNCTION_DECL` 与 `add(int,int)|FUNCTION` 共存；主索引保持「定义优先」，纯声明（无定义）仍可命中。
+- **声明 → 定义原地替换（G2 补强）**：声明标记存放在元素元数据 `cpp.is_declaration`（`x/cpp/context.IsDeclaration` 读取），`core.FileIndexPolicy` 判定同键替换与定义优先；`struct Fwd;` 后接 `struct Fwd {};`、`extern int x;` 后接 `int x;` 时后到定义原地替换先到声明。core 不含该字段。
 - **导入属性泛化（G5）**：`ImportInfo` 只保留通用字段，语言专属属性写入 `Attrs`（key 带语言前缀），core 不解释其语义。
 
 > 工厂函数 `core.NewFileContext` / `core.NewGlobalContext` 已删除：新语言**必须**提供 `x/{lang}/context` 并在 `LanguageImpl.NewGlobalContext` 中注册，避免误用通用实现。

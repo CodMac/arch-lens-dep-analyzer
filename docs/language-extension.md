@@ -67,7 +67,7 @@ type LanguageImpl struct {
 // x/{lang}/context/file_context.go
 type FileContext struct{ *core.BaseFileContext }
 func NewFileContext(...) *FileContext
-// 单包语义（Java）额外实现 core.PackageAwareFileContext；
+// 单包语义（Java）额外实现本包 PackageAwareFileContext；
 // 多命名空间语义（C++）额外实现本包的 NamespaceAware。
 
 // x/{lang}/context/global_context.go
@@ -76,7 +76,7 @@ func NewGlobalContext(r core.SymbolResolver, b core.SymbolBuilder) core.GlobalCo
 func (gc *GlobalContext) RegisterFileContext(fc core.FileContext)   // 先注册包/ns 再委托 Base
 ```
 
-- 语言专属能力用**可选能力接口**表达（`core.PackageAwareFileContext` / `cppctx.NamespaceAware`），core 接口不含语言概念。
+- 语言专属能力用**可选能力接口**表达（`javactx.PackageAwareFileContext` / `cppctx.NamespaceAware`），接口归语言包所有，core 接口不含语言概念。
 - 全局索引（主键/声明-定义替换/重载 kind）由语言包提供 `core.DefinitionIndex` 实现，构造 `BaseGlobalContext` 时注入。
 - 语言专属导入属性写入 `ImportInfo.Attrs`（key 带语言前缀）。
 - 在 `LanguageImpl.NewGlobalContext` 中挂载工厂；引擎经该字段创建上下文。
@@ -218,10 +218,10 @@ type DefinitionIndex interface {
 | # | 优先级 | Gap | 说明 |
 |---|---|---|---|
 | F-1 | ~~P1~~ 已修复 | `qualifiedNameMap` 只按 QN 索引 | 与 `declDefIndex` 的 `QN+Kind` 不一致：C++ 同 QN 不同 Kind（`FUNCTION` / `FUNCTION_DECL`）时后者覆盖前者，查找结果随注册顺序变化。**修复**：改存 `QN -> []*DefinitionEntry`，`FindByQualifiedName` 定义优先（`core/file_context_test.go` 回归） |
-| F-2 | P1 | 声明/定义替换语义在 core | `AddDefinition` 内 `old.IsDeclaration && !def.IsDeclaration` 是 C/C++ 语义，Java 无此概念 |
-| F-3 | P2 | `PackageAwareFileContext` 在 core | 单包语义能力接口放在 core，而多命名空间的 `NamespaceAware` 在 `x/cpp`，同类能力两种归属 |
-| F-4 | P2 | `DefinitionEntry.IsDeclaration` 在 core | 声明/定义双元素是 C/C++ 概念，Java 恒 false |
-| F-5 | P2 | `Imports` 以短名为键 | Java 键是 import 简单名，C++ 键是 include basename，语义不同却共用一个契约 |
+| F-2 | ~~P1~~ 已修复 | 声明/定义替换语义在 core | **修复**：新增 `core.FileIndexPolicy`（`ShouldReplace` / `IsDefinition`），`BaseFileContext` 只按策略执行；`x/cpp/context` 注入声明→定义替换与定义优先，Java 不设置（无声明概念） |
+| F-3 | ~~P2~~ 已修复 | `PackageAwareFileContext` 在 core | **修复**：接口下沉到 `x/java/context`，与 `cppctx.NamespaceAware` 归属一致 |
+| F-4 | ~~P2~~ 已修复 | `DefinitionEntry.IsDeclaration` 在 core | **修复**：删除该字段，声明标记改存元素元数据 `cpp.is_declaration`（`x/cpp/context.IsDeclaration` 读取）；Collector 在注册时写入 |
+| F-5 | 非 Gap | `Imports` 以短名为键 | 契约语义是「源码中引用该导入所用的名字」：Java 为 import 简单名，C++ 为 include 路径；语言差异已由 `ImportInfo.Attrs` 承载，键本身语言无关，保持现状 |
 | F-6 | P3 | 返回内部切片/映射 | `Definitions()`、`Imports()`、`FindByShortName`、`FindByKind` 直接返回内部引用，调用方可篡改 |
 | F-7 | P3 | 零值 `BaseFileContext` 不安全 | 未走 `NewBaseFileContext` 时 map 为 nil，`AddDefinition` 会 panic（仅 `declDefIndex` 有惰性初始化） |
 
@@ -250,5 +250,5 @@ type DefinitionIndex interface {
 
 - **P0**：G-1（注册顺序确定化：按路径排序注册 + 歧义显式判 nil，禁止「先到先得」）。
 - **P1**：~~主键与三索引下沉~~（已由 `DefinitionIndex` 完成）、~~F-1~~、~~G-2~~、~~G-3~~、~~V-1~~。
-- **P2**：F-3/F-4/F-5、G-4/G-5/G-6、V-2。
+- **P2**：~~F-3~~/~~F-4~~（F-5 经复核非 Gap）、G-4/G-5/G-6、~~V-2~~。
 - **P3**：F-6/F-7、G-7/G-8/G-9。

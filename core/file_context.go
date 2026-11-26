@@ -94,6 +94,18 @@ type FileContext interface {
 	FindByKind(kind model.ElementKind) ([]*DefinitionEntry, bool)
 }
 
+// FileIndexPolicy 是语言提供的文件级索引策略。
+//
+// 「声明/定义」是 C/C++ 概念：同键条目是否需要由定义替换声明、查找时是否定义优先，
+// 均由语言实现判定；Java 等无此概念的语言不设置策略（不替换、全部视为定义）。
+type FileIndexPolicy interface {
+	// ShouldReplace 判断同键（QN+Kind）的新条目是否替换旧条目。
+	ShouldReplace(old, new *DefinitionEntry) bool
+
+	// IsDefinition 判断条目是否为「定义」（FindByQualifiedName 定义优先）。
+	IsDefinition(entry *DefinitionEntry) bool
+}
+
 // BaseFileContext 是 FileContext 的通用实现：提供索引/去重等语言无关机制。
 // 语言实现内嵌本结构复用基础能力，可按需覆盖方法。
 type BaseFileContext struct {
@@ -121,6 +133,9 @@ type BaseFileContext struct {
 
 	// 索引：QN + "|" + Kind -> definitions 下标（声明/定义同键原地替换用）。
 	declDefIndex map[string]int
+
+	// policy 语言提供的声明/定义策略；nil 表示无声明概念。
+	policy FileIndexPolicy
 }
 
 // NewBaseFileContext 创建一个空的 Base 文件上下文。
@@ -137,6 +152,9 @@ func NewBaseFileContext(filePath string, root coreast.Node, sourceBytes *[]byte)
 		declDefIndex:     make(map[string]int),
 	}
 }
+
+// SetIndexPolicy 设置语言提供的文件级索引策略（声明/定义语义）。
+func (fc *BaseFileContext) SetIndexPolicy(policy FileIndexPolicy) { fc.policy = policy }
 
 // FilePath 返回文件路径。
 func (fc *BaseFileContext) FilePath() string { return fc.filePath }
@@ -160,12 +178,12 @@ func (fc *BaseFileContext) SetSourceBytes(b *[]byte) { fc.sourceBytes = b }
 func (fc *BaseFileContext) Definitions() []*DefinitionEntry { return fc.definitions }
 
 // AddDefinition 注册一个定义并更新索引。
-// 同 QN + Kind 的「声明 → 定义」原地替换，避免同文件前向声明遮蔽后续定义。
+// 同 QN + Kind 的替换由 FileIndexPolicy 决定（C/C++：声明 → 定义原地替换）。
 func (fc *BaseFileContext) AddDefinition(def *DefinitionEntry) {
 	key := def.Element.QualifiedName + "|" + string(def.Element.Kind)
 	if idx, ok := fc.declDefIndex[key]; ok {
 		old := fc.definitions[idx]
-		if old.IsDeclaration && !def.IsDeclaration {
+		if fc.policy != nil && fc.policy.ShouldReplace(old, def) {
 			fc.definitions[idx] = def
 			if list := fc.shortNameMap[old.Element.Name]; list != nil {
 				for i, d := range list {
@@ -226,9 +244,11 @@ func (fc *BaseFileContext) FindByQualifiedName(qn string) (*DefinitionEntry, boo
 	if !ok || len(entries) == 0 {
 		return nil, false
 	}
-	for _, e := range entries {
-		if !e.IsDeclaration {
-			return e, true
+	if fc.policy != nil {
+		for _, e := range entries {
+			if fc.policy.IsDefinition(e) {
+				return e, true
+			}
 		}
 	}
 	return entries[0], true

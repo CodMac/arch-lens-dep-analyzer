@@ -390,15 +390,15 @@ C/C++ 的判定额外包含「父级是 Namespace 元素」：`ParentQN == ""` �
 
 ## 6. QN 索引与查找
 
-GlobalContext / FileContext 提供两类 QN 索引（均为接口方法，实现在 `core.BaseFileContext` / `core.BaseGlobalContext`）：
+GlobalContext / FileContext 提供两类 QN 索引（文件级实现在 `core.BaseFileContext`，全局索引由语言 `DefinitionIndex` 实现）：
 
 | 索引 | 键 | 说明 |
 |---|---|---|
-| `qualifiedNameMap`（文件内） | 精确 QN | 唯一映射 |
+| `qualifiedNameMap`（文件内） | 精确 QN | 同 QN 多条目（不同 Kind），查找定义优先 |
 | `shortNameMap`（文件内） | 短名（Name） | 可多个（重载/重名） |
 | `qnIndex`（全局） | **`QN + "|" + Kind`** | 声明/定义共存（C/C++ 的 `FUNCTION_DECL` 与 `FUNCTION` 同 QN 不互相吞并） |
 | `primaryIndex`（全局） | 裸 QN | 主索引，**定义优先**（声明不覆盖定义；纯声明仍可命中） |
-| `declDefIndex`（文件内） | **`QN + "|" + Kind`** | 同文件「声明 → 定义」原地替换（`DefinitionEntry.IsDeclaration` 标记），避免前向声明遮蔽后续定义 |
+| `declDefIndex`（文件内） | **`QN + "|" + Kind`** | 同文件「声明 → 定义」原地替换（元数据 `cpp.is_declaration` + 语言 `FileIndexPolicy`），避免前向声明遮蔽后续定义 |
 | `overloadIndex`（全局） | 去参 QN | 重载消解用（`类QN.方法名` → 多候选）；参与 kind 由语言 `DefinitionIndex` 实现决定（Java=`Method`；C/C++=`Method/Function/MethodDecl/FunctionDecl`） |
 
 查找策略（`PreciseResolve`）：

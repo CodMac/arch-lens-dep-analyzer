@@ -16,13 +16,34 @@ func (fakeBuilder) BuildQualifiedName(parentQN, name string) string {
 }
 func (fakeBuilder) IsPrimitive(string) bool { return false }
 
+// testIsDeclKey 是 core 测试用的声明标记键（真实语言用各自 constants 键）。
+const testIsDeclKey = "test.is_declaration"
+
 func def(qn, path string, kind model.ElementKind) *DefinitionEntry {
 	isDecl := kind == model.FunctionDecl || kind == model.MethodDecl
-	return &DefinitionEntry{
-		Element:       &model.CodeElement{QualifiedName: qn, Name: qn, Kind: kind, Path: path},
-		IsDeclaration: isDecl,
+	elem := &model.CodeElement{QualifiedName: qn, Name: qn, Kind: kind, Path: path}
+	if isDecl {
+		elem.GetMores()[testIsDeclKey] = true
 	}
+	return &DefinitionEntry{Element: elem}
 }
+
+// isDeclEntry 读取测试声明标记。
+func isDeclEntry(e *DefinitionEntry) bool {
+	if e == nil || e.Element == nil || e.Element.Extra == nil {
+		return false
+	}
+	v, _ := e.Element.Extra.Mores[testIsDeclKey].(bool)
+	return v
+}
+
+// testFilePolicy 是 core 测试用的 FileIndexPolicy（声明→定义替换、定义优先）。
+type testFilePolicy struct{}
+
+func (testFilePolicy) ShouldReplace(old, new *DefinitionEntry) bool {
+	return isDeclEntry(old) && !isDeclEntry(new)
+}
+func (testFilePolicy) IsDefinition(e *DefinitionEntry) bool { return !isDeclEntry(e) }
 
 // testIndex 是 core 测试用的 DefinitionIndex：复刻「QN|Kind|Path 全量键 +
 // 定义优先主索引 + 函数族重载索引」语义，供 BaseGlobalContext 容器测试使用。
@@ -47,7 +68,7 @@ func newTestIndex() *testIndex {
 func (i *testIndex) Add(d *DefinitionEntry) (*DefinitionEntry, bool) {
 	key := d.Element.QualifiedName + "|" + string(d.Element.Kind) + "|" + d.Element.Path
 	if existing, ok := i.qn[key]; ok {
-		if existing.IsDeclaration && !d.IsDeclaration {
+		if isDeclEntry(existing) && !isDeclEntry(d) {
 			i.qn[key] = d
 			i.primary[d.Element.QualifiedName] = d
 			return existing, true
@@ -57,7 +78,7 @@ func (i *testIndex) Add(d *DefinitionEntry) (*DefinitionEntry, bool) {
 	i.qn[key] = d
 	i.all[d.Element.QualifiedName] = append(i.all[d.Element.QualifiedName], d)
 	i.shortName[d.Element.Name] = append(i.shortName[d.Element.Name], d)
-	if existing, ok := i.primary[d.Element.QualifiedName]; !ok || (existing.IsDeclaration && !d.IsDeclaration) {
+	if existing, ok := i.primary[d.Element.QualifiedName]; !ok || (isDeclEntry(existing) && !isDeclEntry(d)) {
 		i.primary[d.Element.QualifiedName] = d
 	}
 	switch d.Element.Kind {
@@ -134,7 +155,7 @@ func TestGlobalContextDeclDefSameFile(t *testing.T) {
 func TestGlobalContextDeclReplacedByDef(t *testing.T) {
 	gc := NewBaseGlobalContext(nil, fakeBuilder{}, newTestIndex())
 	decl := def("Fwd", "a.c", model.Struct)
-	decl.IsDeclaration = true
+	decl.Element.GetMores()[testIsDeclKey] = true
 	gc.AddDefinition(decl)
 	gc.AddDefinition(def("Fwd", "a.c", model.Struct))
 
@@ -142,7 +163,7 @@ func TestGlobalContextDeclReplacedByDef(t *testing.T) {
 	if len(defs) != 1 {
 		t.Fatalf("expected in-place replace, got %d definitions", len(defs))
 	}
-	if defs[0].IsDeclaration {
+	if isDeclEntry(defs[0]) {
 		t.Fatal("definitions should hold the definition, not the declaration")
 	}
 }

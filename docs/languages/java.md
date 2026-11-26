@@ -279,7 +279,7 @@ uriBuilder.append(this.userInfo).append('@');
 | NoiseFilter | `x/java/noise_filter/` | 三级降噪 |
 | SymbolResolver | `x/java/symbol_resolver/` | 三段式动作解析 + 类型解析 |
 | SymbolBuilder | `x/java/symbol_builder/` | QN 拼接（点号） |
-| FileContext | `x/java/context/` | 内嵌 `core.BaseFileContext` + 实现 `core.PackageAwareFileContext` |
+| FileContext | `x/java/context/` | 内嵌 `core.BaseFileContext` + 实现 `javactx.PackageAwareFileContext` |
 | GlobalContext | `x/java/context/` | 内嵌 `core.BaseGlobalContext`；`RegisterFileContext` 内按 `.` 注册 PACKAGE（默认包注册 `(default)`）；重载索引只收 `Method` |
 
 > SPI 签名中的上下文类型为接口（`core.FileContext` / `core.GlobalContext`），通用索引与锁由 `core.Base*` 提供，Java 专属语义在 `x/java/context` 中实现。

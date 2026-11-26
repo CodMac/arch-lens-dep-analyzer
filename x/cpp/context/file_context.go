@@ -9,8 +9,31 @@ package context
 import (
 	"github.com/CodMac/arch-lens-dep-analyzer/core"
 	coreast "github.com/CodMac/arch-lens-dep-analyzer/core/ast"
+	"github.com/CodMac/arch-lens-dep-analyzer/model"
+	"github.com/CodMac/arch-lens-dep-analyzer/x/cpp/constants"
 	"github.com/CodMac/arch-lens-dep-analyzer/x/cpp/preproc"
 )
+
+// IsDeclaration 判断元素是否为「声明」而非定义（C/C++ 前向声明、函数原型、extern 变量）。
+// 声明/定义是 C/C++ 概念，标记存放在元素元数据中，core 不含该字段。
+func IsDeclaration(elem *model.CodeElement) bool {
+	if elem == nil || elem.Extra == nil {
+		return false
+	}
+	v, _ := elem.Extra.Mores[constants.IsDeclaration].(bool)
+	return v
+}
+
+// fileIndexPolicy 实现 core.FileIndexPolicy：同键声明被定义替换，查找定义优先。
+type fileIndexPolicy struct{}
+
+func (fileIndexPolicy) ShouldReplace(old, new *core.DefinitionEntry) bool {
+	return IsDeclaration(old.Element) && !IsDeclaration(new.Element)
+}
+
+func (fileIndexPolicy) IsDefinition(entry *core.DefinitionEntry) bool {
+	return !IsDeclaration(entry.Element)
+}
 
 // NamespaceAware 是 C/C++ 专属的可选能力接口：
 // 一文件可含多个命名空间，其余语言无需实现。
@@ -50,9 +73,11 @@ type FileContext struct {
 
 // NewFileContext 创建 C/C++ 文件上下文。
 func NewFileContext(filePath string, root coreast.Node, sourceBytes *[]byte) *FileContext {
-	return &FileContext{
+	fc := &FileContext{
 		BaseFileContext: core.NewBaseFileContext(filePath, root, sourceBytes),
 	}
+	fc.SetIndexPolicy(fileIndexPolicy{})
+	return fc
 }
 
 // Namespaces 返回文件内出现的命名空间（按出现顺序，含嵌套前缀）。

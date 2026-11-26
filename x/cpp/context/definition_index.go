@@ -45,7 +45,7 @@ func (idx *DefinitionIndex) Add(def *core.DefinitionEntry) (*core.DefinitionEntr
 	key := qnKey(def.Element.QualifiedName, def.Element.Kind, def.Element.Path)
 	if existing, exists := idx.qnIndex[key]; exists {
 		// 声明与定义同 QN 同 Kind（C 的 struct Fwd; struct Fwd{};）：定义覆盖声明。
-		if existing.IsDeclaration && !def.IsDeclaration {
+		if IsDeclaration(existing.Element) && !IsDeclaration(def.Element) {
 			idx.replace(existing, def)
 			idx.qnIndex[key] = def
 			idx.primaryIndex[def.Element.QualifiedName] = def
@@ -62,7 +62,7 @@ func (idx *DefinitionIndex) Add(def *core.DefinitionEntry) (*core.DefinitionEntr
 	// 若先注册的是声明、后注册定义，则定义覆盖声明。
 	if existing, exists := idx.primaryIndex[def.Element.QualifiedName]; !exists {
 		idx.primaryIndex[def.Element.QualifiedName] = def
-	} else if existing.IsDeclaration && !def.IsDeclaration {
+	} else if IsDeclaration(existing.Element) && !IsDeclaration(def.Element) {
 		idx.primaryIndex[def.Element.QualifiedName] = def
 	}
 
@@ -86,12 +86,12 @@ func (idx *DefinitionIndex) FindAllByQualifiedName(qn string) []*core.Definition
 	}
 	out := make([]*core.DefinitionEntry, 0, len(entries))
 	for _, e := range entries {
-		if !e.IsDeclaration {
+		if !IsDeclaration(e.Element) {
 			out = append(out, e)
 		}
 	}
 	for _, e := range entries {
-		if e.IsDeclaration {
+		if IsDeclaration(e.Element) {
 			out = append(out, e)
 		}
 	}

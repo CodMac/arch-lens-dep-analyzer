@@ -5,6 +5,7 @@ import (
 
 	"github.com/CodMac/arch-lens-dep-analyzer/core"
 	"github.com/CodMac/arch-lens-dep-analyzer/model"
+	"github.com/CodMac/arch-lens-dep-analyzer/x/cpp/constants"
 )
 
 type testBuilder struct{}
@@ -18,10 +19,11 @@ func (testBuilder) BuildQualifiedName(parentQN, name string) string {
 func (testBuilder) IsPrimitive(string) bool { return false }
 
 func entry(qn, name, path string, kind model.ElementKind, decl bool) *core.DefinitionEntry {
-	return &core.DefinitionEntry{
-		Element:       &model.CodeElement{QualifiedName: qn, Name: name, Kind: kind, Path: path},
-		IsDeclaration: decl,
+	elem := &model.CodeElement{QualifiedName: qn, Name: name, Kind: kind, Path: path}
+	if decl {
+		elem.GetMores()[constants.IsDeclaration] = true
 	}
+	return &core.DefinitionEntry{Element: elem}
 }
 
 // TestCppIndexCrossFileCoexist 跨文件同 QN+Kind（static/main/合并副本）应共存。
@@ -47,7 +49,7 @@ func TestCppIndexDeclDefReplace(t *testing.T) {
 		t.Fatalf("definition should replace declaration, got replaced=%v added=%v", replaced, added)
 	}
 	e, ok := idx.FindByQualifiedName("Fwd")
-	if !ok || e.IsDeclaration {
+	if !ok || IsDeclaration(e.Element) {
 		t.Fatalf("primary index should hold definition, got %+v", e)
 	}
 }

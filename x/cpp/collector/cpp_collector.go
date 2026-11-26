@@ -583,11 +583,14 @@ func (c *Collector) collectBasicDefinitions(node coreast.Node, fCtx core.FileCon
 				if cond != "" {
 					it.elem.GetMores()[constants.Condition] = cond
 				}
+				// 声明/定义是 C/C++ 语义，标记写入元素元数据（core 不含该字段）。
+				if it.isDecl {
+					it.elem.GetMores()[constants.IsDeclaration] = true
+				}
 				fCtx.AddDefinition(&core.DefinitionEntry{
-					Element:       it.elem,
-					ParentQN:      it.parentQN,
-					IsDeclaration: it.isDecl,
-					Node:          node,
+					Element:  it.elem,
+					ParentQN: it.parentQN,
+					Node:     node,
 				})
 			}
 
@@ -1428,8 +1431,11 @@ func (c *Collector) collectControlFlowScope(node coreast.Node, fCtx core.FileCon
 				c.assignQN(it, blockQN, childOcc, src)
 				it.elem.Path = fCtx.FilePath()
 				it.elem.Location = helper.ExtractLocation(node, fCtx.FilePath())
+				if it.isDecl {
+					it.elem.GetMores()[constants.IsDeclaration] = true
+				}
 				fCtx.AddDefinition(&core.DefinitionEntry{
-					Element: it.elem, ParentQN: it.parentQN, IsDeclaration: it.isDecl, Node: node,
+					Element: it.elem, ParentQN: it.parentQN, Node: node,
 				})
 			}
 		}
