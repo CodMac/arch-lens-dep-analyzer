@@ -41,7 +41,9 @@ func (b *Binder) BindSymbols(gc core.GlobalContext) error {
 
 			// 1. 返回值
 			if raw, ok := mores[constants.FunctionReturnType].(string); ok && raw != "" {
-				mores[constants.FunctionReturnTypeWithQN] = b.resolveToQN(gc, fCtx, elem.QualifiedName, raw)
+				if qn := b.resolveToQN(gc, fCtx, elem.QualifiedName, raw); qn != "" {
+					mores[constants.FunctionReturnTypeWithQN] = qn
+				}
 			}
 
 			// 2. 参数列表 ["type name", ...]
@@ -58,6 +60,10 @@ func (b *Binder) BindSymbols(gc core.GlobalContext) error {
 						continue
 					}
 					qn := b.resolveToQN(gc, fCtx, elem.QualifiedName, typePart)
+					if qn == "" {
+						// 匿名内联类型无 QN，保留原始类型文本以免签名丢类型。
+						qn = typePart
+					}
 					if namePart != "" {
 						qnParams[i] = qn + " " + namePart
 					} else {
@@ -69,12 +75,16 @@ func (b *Binder) BindSymbols(gc core.GlobalContext) error {
 
 			// 3. 变量类型
 			if raw, ok := mores[constants.VariableRawType].(string); ok && raw != "" {
-				mores[constants.VariableTypeWithQN] = b.resolveToQN(gc, fCtx, elem.QualifiedName, raw)
+				if qn := b.resolveToQN(gc, fCtx, elem.QualifiedName, raw); qn != "" {
+					mores[constants.VariableTypeWithQN] = qn
+				}
 			}
 
 			// 4. 字段类型
 			if raw, ok := mores[constants.FieldRawType].(string); ok && raw != "" {
-				mores[constants.FieldTypeWithQN] = b.resolveToQN(gc, fCtx, elem.QualifiedName, raw)
+				if qn := b.resolveToQN(gc, fCtx, elem.QualifiedName, raw); qn != "" {
+					mores[constants.FieldTypeWithQN] = qn
+				}
 			}
 
 			// 5. typedef/using 底层类型（concept 的 underlying 是约束表达式，不是类型，跳过）
@@ -97,6 +107,15 @@ func (b *Binder) resolveToQN(gc core.GlobalContext, fCtx core.FileContext, owner
 	rawType = helper.NormalizeTypeText(rawType)
 	if rawType == "" {
 		return ""
+	}
+
+	// 内联类型定义（struct X { ... } / enum { ... }）：类型文本含定义体，
+	// 取标签名解析；匿名内联类型无 QN，返回空。
+	if tag, inline := inlineTypeTag(rawType); inline {
+		if tag == "" {
+			return ""
+		}
+		rawType = tag
 	}
 
 	base := helper.BaseTypeName(rawType)
@@ -185,7 +204,17 @@ func (b *Binder) expandAlias(gc core.GlobalContext, fCtx core.FileContext, owner
 	if isAnonymousTypeText(underlying) {
 		return elem.QualifiedName
 	}
-	next := helper.BaseTypeName(underlying)
+	// 具名内联定义（typedef struct Named { ... } Named;）：取标签名作为下一跳，
+	// 避免把定义体原文当成类型名。
+	var next string
+	if tag, inline := inlineTypeTag(underlying); inline {
+		if tag == "" {
+			return elem.QualifiedName
+		}
+		next = tag
+	} else {
+		next = helper.BaseTypeName(underlying)
+	}
 	if next == "" || next == name {
 		return name
 	}
@@ -262,6 +291,28 @@ func splitParam(p string) (typePart, namePart string) {
 		return p, ""
 	}
 	return strings.TrimSpace(p[:idx]), candidate
+}
+
+// inlineTypeTag 识别类型文本中的内联定义体（{ ... }）。
+// 返回 (标签名, 是否内联定义)；匿名内联类型（struct { ... }）标签名为空。
+// 例：struct NestedInner { int deep; } -> ("NestedInner", true)
+//
+//	enum { A, B } -> ("", true)
+func inlineTypeTag(s string) (string, bool) {
+	i := strings.IndexByte(s, '{')
+	if i < 0 {
+		return "", false
+	}
+	fields := strings.Fields(strings.TrimSpace(s[:i]))
+	if len(fields) == 0 {
+		return "", true
+	}
+	last := fields[len(fields)-1]
+	switch last {
+	case "struct", "union", "class", "enum":
+		return "", true
+	}
+	return last, true
 }
 
 // isAnonymousTypeText 判断类型文本是否为匿名 struct/union/class/enum 定义

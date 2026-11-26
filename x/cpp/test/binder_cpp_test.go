@@ -58,6 +58,29 @@ func TestBinderCppSingleLetterStruct(t *testing.T) {
 	})
 }
 
+// TestBinderCppInlineTypeDefinition 内联类型定义体不得泄漏进 type_with_qn：
+// 具名内联类型（struct Inner { ... }）解析为标签 QN，匿名内联类型（struct { ... }）不写键。
+func TestBinderCppInlineTypeDefinition(t *testing.T) {
+	paths := ResolvePaths(t, "binder/cpp/inline_type", "*.c")
+	gc, rels := RunExtraction(t, "x/cpp/testdata", paths)
+
+	// 具名内联类型：字段类型解析为标签 QN。
+	AssertMores(t, gc, "ItOuter::inner", constants.FieldTypeWithQN, "ItOuter::ItInner")
+	FindRel(t, rels, func(r *model.DependencyRelation) bool {
+		return r.Type == model.TypeArg && r.Source.QualifiedName == "ItOuter::inner" &&
+			r.Target.QualifiedName == "ItOuter::ItInner"
+	})
+
+	// 别名与标签同名的内联定义：underlying 取标签名，不得泄漏定义体原文。
+	AssertMores(t, gc, "ItTagSame", constants.TypeUnderlyingWithQN, "ItTagSame")
+
+	// 匿名内联类型：无 QN，不写 type_with_qn。
+	for _, qn := range []string{"ItOuter::payload", "it_f()::local_anon", "it_f()::local_e"} {
+		AssertNoMores(t, gc, qn, constants.FieldTypeWithQN)
+		AssertNoMores(t, gc, qn, constants.VariableTypeWithQN)
+	}
+}
+
 // TestBinderCppMultiWordPrimitive 多词基本类型识别为 PRIMITIVE，不落为外部类型。
 func TestBinderCppMultiWordPrimitive(t *testing.T) {
 	paths := ResolvePaths(t, "binder/cpp/primitive", "*.cpp")
