@@ -174,12 +174,15 @@ func (fc *BaseFileContext) SourceBytes() *[]byte { return fc.sourceBytes }
 // SetSourceBytes 设置源文件字节内容。
 func (fc *BaseFileContext) SetSourceBytes(b *[]byte) { fc.sourceBytes = b }
 
-// Definitions 返回本文件定义列表。
-func (fc *BaseFileContext) Definitions() []*DefinitionEntry { return fc.definitions }
+// Definitions 返回本文件定义列表（副本，避免调用方篡改内部切片）。
+func (fc *BaseFileContext) Definitions() []*DefinitionEntry {
+	return append([]*DefinitionEntry(nil), fc.definitions...)
+}
 
 // AddDefinition 注册一个定义并更新索引。
 // 同 QN + Kind 的替换由 FileIndexPolicy 决定（C/C++：声明 → 定义原地替换）。
 func (fc *BaseFileContext) AddDefinition(def *DefinitionEntry) {
+	fc.ensureInit()
 	key := def.Element.QualifiedName + "|" + string(def.Element.Kind)
 	if idx, ok := fc.declDefIndex[key]; ok {
 		old := fc.definitions[idx]
@@ -212,9 +215,6 @@ func (fc *BaseFileContext) AddDefinition(def *DefinitionEntry) {
 		}
 		return
 	}
-	if fc.declDefIndex == nil {
-		fc.declDefIndex = make(map[string]int)
-	}
 	fc.declDefIndex[key] = len(fc.definitions)
 	fc.definitions = append(fc.definitions, def)
 	fc.shortNameMap[def.Element.Name] = append(fc.shortNameMap[def.Element.Name], def)
@@ -222,18 +222,28 @@ func (fc *BaseFileContext) AddDefinition(def *DefinitionEntry) {
 	fc.kindMap[def.Element.Kind] = append(fc.kindMap[def.Element.Kind], def)
 }
 
-// Imports 返回导入表。
-func (fc *BaseFileContext) Imports() map[string][]*ImportInfo { return fc.imports }
+// Imports 返回导入表（副本，避免调用方篡改内部映射）。
+func (fc *BaseFileContext) Imports() map[string][]*ImportInfo {
+	out := make(map[string][]*ImportInfo, len(fc.imports))
+	for k, v := range fc.imports {
+		out[k] = v
+	}
+	return out
+}
 
 // AddImport 注册一个导入。
 func (fc *BaseFileContext) AddImport(shortName string, info *ImportInfo) {
+	fc.ensureInit()
 	fc.imports[shortName] = append(fc.imports[shortName], info)
 }
 
-// FindByShortName 按短名返回定义（可能多个）。
+// FindByShortName 按短名返回定义（可能多个，返回副本）。
 func (fc *BaseFileContext) FindByShortName(name string) ([]*DefinitionEntry, bool) {
 	entries, ok := fc.shortNameMap[name]
-	return entries, ok
+	if !ok {
+		return nil, false
+	}
+	return append([]*DefinitionEntry(nil), entries...), true
 }
 
 // FindByQualifiedName 按限定名返回定义（同 QN 多条目时定义优先）。
@@ -254,8 +264,30 @@ func (fc *BaseFileContext) FindByQualifiedName(qn string) (*DefinitionEntry, boo
 	return entries[0], true
 }
 
-// FindByKind 按元素类型返回定义。
+// FindByKind 按元素类型返回定义（返回副本）。
 func (fc *BaseFileContext) FindByKind(kind model.ElementKind) ([]*DefinitionEntry, bool) {
 	entries, ok := fc.kindMap[kind]
-	return entries, ok
+	if !ok {
+		return nil, false
+	}
+	return append([]*DefinitionEntry(nil), entries...), true
+}
+
+// ensureInit 为未走构造函数的零值 BaseFileContext 惰性初始化索引。
+func (fc *BaseFileContext) ensureInit() {
+	if fc.imports == nil {
+		fc.imports = make(map[string][]*ImportInfo)
+	}
+	if fc.shortNameMap == nil {
+		fc.shortNameMap = make(map[string][]*DefinitionEntry)
+	}
+	if fc.qualifiedNameMap == nil {
+		fc.qualifiedNameMap = make(map[string][]*DefinitionEntry)
+	}
+	if fc.kindMap == nil {
+		fc.kindMap = make(map[model.ElementKind][]*DefinitionEntry)
+	}
+	if fc.declDefIndex == nil {
+		fc.declDefIndex = make(map[string]int)
+	}
 }

@@ -222,8 +222,8 @@ type DefinitionIndex interface {
 | F-3 | ~~P2~~ 已修复 | `PackageAwareFileContext` 在 core | **修复**：接口下沉到 `x/java/context`，与 `cppctx.NamespaceAware` 归属一致 |
 | F-4 | ~~P2~~ 已修复 | `DefinitionEntry.IsDeclaration` 在 core | **修复**：删除该字段，声明标记改存元素元数据 `cpp.is_declaration`（`x/cpp/context.IsDeclaration` 读取）；Collector 在注册时写入 |
 | F-5 | 非 Gap | `Imports` 以短名为键 | 契约语义是「源码中引用该导入所用的名字」：Java 为 import 简单名，C++ 为 include 路径；语言差异已由 `ImportInfo.Attrs` 承载，键本身语言无关，保持现状 |
-| F-6 | P3 | 返回内部切片/映射 | `Definitions()`、`Imports()`、`FindByShortName`、`FindByKind` 直接返回内部引用，调用方可篡改 |
-| F-7 | P3 | 零值 `BaseFileContext` 不安全 | 未走 `NewBaseFileContext` 时 map 为 nil，`AddDefinition` 会 panic（仅 `declDefIndex` 有惰性初始化） |
+| F-6 | ~~P3~~ 已修复 | 返回内部切片/映射 | **修复**：`Definitions()` / `Imports()` / `FindByShortName` / `FindByKind` 均返回副本 |
+| F-7 | ~~P3~~ 已修复 | 零值 `BaseFileContext` 不安全 | **修复**：`ensureInit` 在 `AddDefinition` / `AddImport` 惰性初始化全部索引 |
 
 ### 8.3 全局上下文（`core/global_context.go`）
 
@@ -235,8 +235,8 @@ type DefinitionIndex interface {
 | G-4 | ~~P2~~ 已修复 | `RegisterFileContext` 非模板方法 | **修复**：新增 `RegisterFileContextWith(fc, before)`，在同一把写锁内先执行语言钩子再登记定义；Java 包注册改走该模板方法 |
 | G-5 | ~~P2~~ 已修复 | `addDefinitionLocked` / `replaceDefinitionLocked` 不可复用 | **修复**：导出 `AddDefinitionLocked` / `FindByQualifiedNameLocked` 供持锁流程复用；`replaceDefinitionLocked` 已随索引下沉移入语言实现 |
 | G-6 | ~~P3~~ 已修复 | `FindOverloadCandidates` 返回内部切片 | **修复**：Base 返回副本 |
-| G-7 | P3 | 替换与 `qnIndex` 更新耦合 | `addDefinitionLocked` 内手工同步 `qnIndex`/`primaryIndex`/`overloadIndex` 三处，新增索引易漏 |
-| G-8 | P3 | `primaryIndex` 折叠跨文件同名 QN | 折叠后无公开 API 取「全部同名定义」，语言侧无法显式处理歧义 |
+| G-7 | ~~P3~~ 已修复 | 替换与 `qnIndex` 更新耦合 | **修复**：索引同步收敛到语言 `DefinitionIndex.Add` 单点，Base 不再手工同步 |
+| G-8 | ~~P3~~ 已修复 | `primaryIndex` 折叠跨文件同名 QN | **修复**：`FindAllByQualifiedName` 返回同 QN 全部条目，语言侧可显式处理歧义 |
 | G-9 | ~~P3~~ 已修复 | `GlobalContextRules` 策略不足 | 只有 `OverloadKinds`，无法表达主键/替换/可见性策略。**修复**：删除 `GlobalContextRules`，由 `DefinitionIndex` 承担键/替换/重载策略 |
 
 ### 8.4 可见性
@@ -251,4 +251,4 @@ type DefinitionIndex interface {
 - **P0**：G-1（注册顺序确定化：按路径排序注册 + 歧义显式判 nil，禁止「先到先得」）。
 - **P1**：~~主键与三索引下沉~~（已由 `DefinitionIndex` 完成）、~~F-1~~、~~G-2~~、~~G-3~~、~~V-1~~。
 - **P2**：~~F-3~~/~~F-4~~（F-5 经复核非 Gap）、~~G-4~~/~~G-5~~/~~G-6~~、~~V-2~~。
-- **P3**：F-6/F-7、G-7/G-8/G-9。
+- **P3**：~~F-6~~/~~F-7~~、~~G-7~~/~~G-8~~/~~G-9~~。
