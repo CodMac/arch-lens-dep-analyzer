@@ -166,7 +166,7 @@ func (c *Collector) processTopLevelDeclarations(fCtx core.FileContext) {
 
 // setPackageName 设置 Java 文件上下文的包名（Java 专属能力，经可选接口访问）。
 func setPackageName(fCtx core.FileContext, name string) {
-	if pfc, ok := fCtx.(core.PackageAwareFileContext); ok {
+	if pfc, ok := fCtx.(javactx.PackageAwareFileContext); ok {
 		pfc.SetPackageName(name)
 	}
 }

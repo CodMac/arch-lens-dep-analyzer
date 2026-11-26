@@ -22,7 +22,7 @@ func NewGlobalContext(resolver core.SymbolResolver, builder core.SymbolBuilder) 
 
 // RegisterFileContext 先注册包层级，再登记文件内定义。
 func (gc *GlobalContext) RegisterFileContext(fc core.FileContext) {
-	if pfc, ok := fc.(core.PackageAwareFileContext); ok {
+	if pfc, ok := fc.(PackageAwareFileContext); ok {
 		if name := pfc.PackageName(); name != "" {
 			gc.registerPackage(name)
 		} else {

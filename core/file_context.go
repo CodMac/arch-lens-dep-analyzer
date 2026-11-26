@@ -51,8 +51,8 @@ func (i *ImportInfo) BoolAttr(key string) bool {
 // FileContext 描述单个源文件的符号定义集合与索引。
 //
 // 分层设计：core 只保留语言无关契约，通用索引/去重机制由 BaseFileContext 提供；
-// 语言专属能力通过可选能力接口暴露（如 Java 的 PackageAwareFileContext），
-// core 接口本身不含任何语言概念。
+// 语言专属能力由各语言包定义可选能力接口（如 x/java/context.PackageAwareFileContext、
+// cppctx.NamespaceAware），core 接口本身不含任何语言概念。
 type FileContext interface {
 	// FilePath 文件路径（相对项目根）。
 	FilePath() string
@@ -92,18 +92,6 @@ type FileContext interface {
 
 	// FindByKind 按元素类型返回定义。
 	FindByKind(kind model.ElementKind) ([]*DefinitionEntry, bool)
-}
-
-// PackageAwareFileContext 是语言专属的可选能力接口：
-// 单包语义的语言（Java/Go）实现该接口，其余语言无需实现。
-type PackageAwareFileContext interface {
-	FileContext
-
-	// PackageName 包名（如 com.example.base）。
-	PackageName() string
-
-	// SetPackageName 设置包名。
-	SetPackageName(name string)
 }
 
 // BaseFileContext 是 FileContext 的通用实现：提供索引/去重等语言无关机制。

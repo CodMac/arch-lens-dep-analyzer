@@ -7,6 +7,7 @@ import (
 	"github.com/CodMac/arch-lens-dep-analyzer/core"
 	coreast "github.com/CodMac/arch-lens-dep-analyzer/core/ast"
 	"github.com/CodMac/arch-lens-dep-analyzer/model"
+	javactx "github.com/CodMac/arch-lens-dep-analyzer/x/java/context"
 )
 
 // GetNodeContent 返回 AST 节点的源码文本（nil 安全）。
@@ -250,9 +251,9 @@ func IsTypeVariable(s string) bool {
 }
 
 // PackageNameOf 返回文件上下文声明的包名；非 Java 上下文（未实现
-// core.PackageAwareFileContext）返回空串。
+// javactx.PackageAwareFileContext）返回空串。
 func PackageNameOf(fc core.FileContext) string {
-	if pfc, ok := fc.(core.PackageAwareFileContext); ok {
+	if pfc, ok := fc.(javactx.PackageAwareFileContext); ok {
 		return pfc.PackageName()
 	}
 	return ""
