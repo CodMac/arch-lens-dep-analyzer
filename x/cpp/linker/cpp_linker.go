@@ -32,7 +32,7 @@ func (l *Linker) LinkHierarchy(gc core.GlobalContext) []*model.DependencyRelatio
 				continue
 			}
 			if isTopLevel(entry, fCtx) {
-				l.addRel(relMap, model.File, filePath, entry.Element.Kind, entry.Element.QualifiedName)
+				l.addRel(relMap, model.File, filePath, entry.Element.Kind, entry.Element.QualifiedName, filePath)
 			}
 		}
 	}
@@ -104,7 +104,7 @@ func (l *Linker) linkNamespaces(gc core.GlobalContext, relMap map[string]*model.
 		if p, ok := gc.FindByQualifiedName(parent); !ok || p.Element.Kind != model.Namespace {
 			continue
 		}
-		l.addRel(relMap, model.Namespace, parent, model.Namespace, qn)
+		l.addRel(relMap, model.Namespace, parent, model.Namespace, qn, def.Element.Path)
 	}
 
 	// Namespace → 直接子元素由 Extractor 的 Contain 产出（按 ParentQN），此处不重复生成。
@@ -116,7 +116,7 @@ func (l *Linker) linkNamespaces(gc core.GlobalContext, relMap map[string]*model.
 			continue
 		}
 		for _, ns := range nfc.Namespaces() {
-			l.addRel(relMap, model.Namespace, ns, model.File, fCtx.FilePath())
+			l.addRel(relMap, model.Namespace, ns, model.File, fCtx.FilePath(), fCtx.FilePath())
 		}
 	}
 }
@@ -352,7 +352,8 @@ func isStaticFunc(elem *model.CodeElement) bool {
 }
 
 // addRel 生成唯一 Key 并加入 Map（已存在则跳过）。
-func (l *Linker) addRel(m map[string]*model.DependencyRelation, srcKind model.ElementKind, srcQN string, tgtKind model.ElementKind, tgtQN string) {
+// path 为关系归属文件，写入两端元素，供快照区分跨文件同 QN 的关系。
+func (l *Linker) addRel(m map[string]*model.DependencyRelation, srcKind model.ElementKind, srcQN string, tgtKind model.ElementKind, tgtQN string, path string) {
 	key := string(srcKind) + ":" + srcQN + "->" + tgtQN
 	if _, exists := m[key]; exists {
 		return
@@ -360,10 +361,10 @@ func (l *Linker) addRel(m map[string]*model.DependencyRelation, srcKind model.El
 	m[key] = &model.DependencyRelation{
 		Type: model.Contain,
 		Source: &model.CodeElement{
-			Kind: srcKind, QualifiedName: srcQN, IsFormSource: true,
+			Kind: srcKind, QualifiedName: srcQN, Path: path, IsFormSource: true,
 		},
 		Target: &model.CodeElement{
-			Kind: tgtKind, QualifiedName: tgtQN, IsFormSource: true,
+			Kind: tgtKind, QualifiedName: tgtQN, Path: path, IsFormSource: true,
 		},
 	}
 }

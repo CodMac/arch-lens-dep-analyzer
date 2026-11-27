@@ -66,10 +66,19 @@ func (s *e2eSnapshot) addRelation(r *model.DependencyRelation) {
 	if r.Location != nil {
 		loc = r.Location.FilePath + ":" + strconv.Itoa(r.Location.StartLine)
 	}
+	// 关系归属文件：动作关系取 Location 所在文件，结构关系（无 Location）取 Source 元素所在文件。
+	// 用于区分跨文件同 QN 的关系（如 namespace 在 .h/.cpp 各有一条 CONTAIN）。
+	path := ""
+	if r.Location != nil && r.Location.FilePath != "" {
+		path = r.Location.FilePath
+	} else if r.Source != nil {
+		path = r.Source.Path
+	}
 	mores, _ := json.Marshal(r.Mores)
 	s.entries = append(s.entries, goldenEntry{
 		QN:       src,
 		Type:     string(r.Type),
+		Path:     path,
 		Source:   src,
 		Target:   tgt,
 		Location: loc,
