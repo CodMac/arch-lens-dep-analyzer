@@ -43,6 +43,8 @@ func (p *cppParser) ParseFile(path string) (coreast.SourceFile, error) {
 //     但纯 C 项目 .c 用 c grammar 可获得与源语言一致的 AST）
 //   - .cpp/.hpp/.cc/.cxx 用 cpp grammar
 func (p *cppParser) parseBytes(path string, content []byte) (coreast.SourceFile, error) {
+	// 换行归一化：避免 CRLF/LF 检出差异传导到 AST 文本与 Mores 原文。
+	content = core.NormalizeEOL(content)
 	lang := sitter.NewLanguage(languageForPath(path))
 	if err := p.parser.SetLanguage(lang); err != nil {
 		return nil, err

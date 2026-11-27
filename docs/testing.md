@@ -230,6 +230,8 @@ func TestE2EGolden(t *testing.T) {
 
 **C/C++ 快照的额外确定性规则**：元素去重键为 `QN + "|" + Kind`（声明/定义同 QN 共存），排序键在 QN 之后追加 `Kind`，保证 `FUNCTION_DECL` 与 `FUNCTION` 的输出顺序稳定。
 
+**换行归一化**：解析器读入源码后统一把 CRLF 归一化为 LF（`core.NormalizeEOL`），AST 文本与 Mores 中的源码原文（`raw_text` / `value_expression` 等）不再随检出环境的换行风格变化，同一份代码在 Windows/Linux 下产出相同快照。
+
 ## 6. 测试命令
 
 ```bash

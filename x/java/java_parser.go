@@ -34,6 +34,8 @@ func (p *javaParser) ParseFile(path string) (coreast.SourceFile, error) {
 
 // parseBytes 解析源码字节内容（供测试与内存解析复用）。
 func (p *javaParser) parseBytes(path string, content []byte) (coreast.SourceFile, error) {
+	// 换行归一化：避免 CRLF/LF 检出差异传导到 AST 文本与 Mores 原文。
+	content = core.NormalizeEOL(content)
 	lang := sitter.NewLanguage(treeSitterJava.Language())
 	if err := p.parser.SetLanguage(lang); err != nil {
 		return nil, err
