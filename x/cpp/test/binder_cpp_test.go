@@ -106,3 +106,17 @@ func TestBinderCppMultiWordPrimitive(t *testing.T) {
 		})
 	}
 }
+
+// TestBinderCppUnnamedStructParam 无名形参 `struct S` 的标签是类型一部分，
+// 不是参数名：parameters_with_qn 应为 S，PARAMETER 目标应为源码 struct S。
+func TestBinderCppUnnamedStructParam(t *testing.T) {
+	paths := ResolvePaths(t, "collector/c/param", "*.c")
+	gc, rels := RunExtraction(t, "x/cpp/testdata", paths)
+
+	AssertMores(t, gc, "unnamed(int,char*,struct S)", constants.FunctionParametersWithQN,
+		[]string{"int", "char", "S"})
+	FindRel(t, rels, func(r *model.DependencyRelation) bool {
+		return r.Type == model.Parameter && r.Source.QualifiedName == "unnamed(int,char*,struct S)" &&
+			r.Target.QualifiedName == "S" && !r.Target.IsFormExternal
+	})
+}

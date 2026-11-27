@@ -282,6 +282,11 @@ func splitParam(p string) (typePart, namePart string) {
 			return p[:i] + "(*)", rest[:j]
 		}
 	}
+	// struct/union/class/enum + 单个标签名（如无名形参 `struct S`）：
+	// 标签是类型的一部分，不是参数名。
+	if f := strings.Fields(p); len(f) == 2 && isTypeKeyword(f[0]) && isIdentifier(f[1]) {
+		return p, ""
+	}
 	idx := strings.LastIndexAny(p, " \t")
 	if idx < 0 {
 		return p, ""
@@ -291,6 +296,15 @@ func splitParam(p string) (typePart, namePart string) {
 		return p, ""
 	}
 	return strings.TrimSpace(p[:idx]), candidate
+}
+
+// isTypeKeyword 判断是否为 C/C++ 类型关键字。
+func isTypeKeyword(s string) bool {
+	switch s {
+	case "struct", "union", "class", "enum":
+		return true
+	}
+	return false
 }
 
 // inlineTypeTag 识别类型文本中的内联定义体（{ ... }）。
