@@ -602,6 +602,25 @@ func TestExtractorCppStackCtorCall(t *testing.T) {
 	})
 }
 
+// TestExtractorCppDelegatingCtor 委托构造 `Delegating() : Delegating(0) {}` 产 CALL。
+func TestExtractorCppDelegatingCtor(t *testing.T) {
+	paths := ResolvePaths(t, "collector/cpp/ctor_dtor", "*.cpp")
+	_, rels := RunExtraction(t, "x/cpp/testdata", paths)
+
+	// 委托目标：同类另一构造器
+	FindRel(t, rels, func(r *model.DependencyRelation) bool {
+		return r.Type == model.Call &&
+			r.Source.QualifiedName == "Delegating::Delegating()" &&
+			r.Target.QualifiedName == "Delegating::Delegating(int)"
+	})
+	// 普通成员初始化 value_(v) 仍是 ASSIGN，不应误产 CALL
+	if HasRel(rels, func(r *model.DependencyRelation) bool {
+		return r.Type == model.Call && r.Source.QualifiedName == "Delegating::Delegating(int)"
+	}) {
+		t.Errorf("member initializer value_(v) should not produce CALL")
+	}
+}
+
 // TestExtractorCppDesignatedInit 指定初始化 P p{.x = 1} 产字段 ASSIGN。
 func TestExtractorCppDesignatedInit(t *testing.T) {
 	paths := ResolvePaths(t, "extractor/cpp/designated_init", "*.cpp")

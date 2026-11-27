@@ -35,6 +35,8 @@ func TestCollectorCppBase(t *testing.T) {
 	// --- Struct / Class ---
 	AssertDef(t, gc, "base_ns::BaseStruct", model.Struct)
 	AssertFieldsOf(t, gc, "base_ns::BaseStruct", []string{"field"})
+	AssertDef(t, gc, "base_ns::BaseStruct::field", model.Field)
+	AssertMores(t, gc, "base_ns::BaseStruct::field", constants.FieldRawType, "int")
 	AssertDef(t, gc, "base_ns::BaseClass", model.Class)
 	AssertFieldsOf(t, gc, "base_ns::BaseClass", []string{"member"})
 
@@ -45,6 +47,7 @@ func TestCollectorCppBase(t *testing.T) {
 	AssertDef(t, gc, "base_ns::ScopedEnum", model.Enum)
 	AssertMores(t, gc, "base_ns::ScopedEnum", constants.EnumIsScoped, true)
 	AssertDef(t, gc, "base_ns::ScopedEnum::SE_A", model.EnumConstant)
+	AssertDef(t, gc, "base_ns::ScopedEnum::SE_B", model.EnumConstant)
 
 	// --- Function / FunctionDecl ---
 	AssertDef(t, gc, "base_ns::base_func(int)", model.Function)
@@ -80,16 +83,24 @@ func TestCollectorCppBase(t *testing.T) {
 	AssertMores(t, gc, "BASE_MACRO", constants.MacroIsFunctionLike, false)
 	AssertDef(t, gc, "BASE_FUNC_MACRO", model.Macro)
 	AssertMores(t, gc, "BASE_FUNC_MACRO", constants.MacroIsFunctionLike, true)
+	AssertDef(t, gc, "CPP_BASE_H", model.Macro)
 
 	// --- Lambda ---
 	AssertDef(t, gc, "base_ns::base_lambda_user()::lambda$1", model.Lambda)
 	AssertDef(t, gc, "base_ns::base_lambda_user()::lambda$1::x", model.Variable)
+	AssertDef(t, gc, "base_ns::base_lambda_user()::lam", model.Variable)
 	AssertMores(t, gc, "base_ns::base_lambda_user()::lam", constants.VariableLambdaQN,
 		"base_ns::base_lambda_user()::lambda$1")
 
 	// --- ScopeBlock ---
 	AssertDef(t, gc, "base_ns::BaseClass::method()::block$1", model.ScopeBlock)
 	AssertDef(t, gc, "base_ns::BaseClass::method()::block$1::in_block", model.Variable)
+
+	// --- 依赖头 cpp_base_dep.h ---
+	AssertDef(t, gc, "DepType", model.Struct)
+	AssertDef(t, gc, "DepType::v", model.Field)
+	AssertMores(t, gc, "DepType::v", constants.FieldRawType, "int")
+	AssertDef(t, gc, "CPP_BASE_DEP_H", model.Macro)
 }
 
 // =============================================================================
@@ -159,11 +170,13 @@ func TestCollectorCppDeclDef(t *testing.T) {
 	// 同文件先声明后定义：共享 QN，不产生 $2
 	AssertDef(t, gc, "local_proto(int)", model.Function)
 	assertElemInFile(t, gc, "collector/cpp/decl_def/decl_def.cpp", "local_proto(int)", model.FunctionDecl)
+	AssertDef(t, gc, "local_proto(int)::a", model.Variable)
 	AssertNoDef(t, gc, "local_proto(int)$2")
 
 	// 头文件原型 + 源文件定义
 	AssertDef(t, gc, "header_func(int)", model.Function)
 	assertElemInFile(t, gc, "collector/cpp/decl_def/decl_def.h", "header_func(int)", model.FunctionDecl)
+	AssertDef(t, gc, "header_func(int)::a", model.Variable)
 	AssertNoDef(t, gc, "header_func(int)$2")
 
 	// 前向声明 + 定义：定义覆盖，不产生 $2
@@ -180,8 +193,11 @@ func TestCollectorCppDeclDef(t *testing.T) {
 	AssertDef(t, gc, "FwdEnum", model.Enum)
 	AssertNoDef(t, gc, "FwdEnum$2")
 	AssertDef(t, gc, "FwdEnum::FE_A", model.EnumConstant)
+	AssertDef(t, gc, "FwdEnum::FE_B", model.EnumConstant)
 
 	// 类内声明 + 类外定义
+	AssertDef(t, gc, "DeclaredClass", model.Class)
+	AssertDef(t, gc, "DeclaredClass::declared_field", model.Field)
 	AssertDef(t, gc, "DeclaredClass::declared_method()", model.Method)
 	assertElemInFile(t, gc, "collector/cpp/decl_def/decl_def.h", "DeclaredClass::declared_method()", model.MethodDecl)
 
@@ -199,6 +215,9 @@ func TestCollectorCppDeclDef(t *testing.T) {
 	// 头文件内完整定义的结构体
 	AssertDef(t, gc, "DefinedInHeader", model.Struct)
 	AssertFieldsOf(t, gc, "DefinedInHeader", []string{"hv"})
+
+	// 头文件 include guard 宏
+	AssertDef(t, gc, "CPP_DECL_DEF_H", model.Macro)
 }
 
 // =============================================================================
@@ -210,14 +229,23 @@ func TestCollectorCppClass(t *testing.T) {
 
 	// 抽象类与纯虚
 	AssertDef(t, gc, "Abstract", model.Class)
+	AssertDef(t, gc, "Abstract::pure()", model.MethodDecl)
 	AssertMores(t, gc, "Abstract::pure()", constants.FunctionIsPureVirtual, true)
 	AssertMores(t, gc, "Abstract::pure()", constants.FunctionIsVirtual, true)
+	AssertDef(t, gc, "Abstract::~Abstract()", model.Method)
 	AssertMores(t, gc, "Abstract::~Abstract()", constants.FunctionIsDestructor, true)
 	AssertMores(t, gc, "Abstract::~Abstract()", constants.FunctionIsVirtual, true)
 
 	// final 类
 	AssertDef(t, gc, "FinalClass", model.Class)
 	AssertFieldsOf(t, gc, "FinalClass", []string{"fv"})
+
+	// friend 类：普通类 + 字段
+	AssertDef(t, gc, "FriendClass", model.Class)
+	AssertDef(t, gc, "FriendClass::fc", model.Field)
+
+	// 外层类本身
+	AssertDef(t, gc, "Outer", model.Class)
 
 	// 嵌套类型：QN 带父级前缀
 	AssertDef(t, gc, "Outer::NestedStruct", model.Struct)
@@ -228,19 +256,24 @@ func TestCollectorCppClass(t *testing.T) {
 	AssertDef(t, gc, "Outer::NestedEnum::NE_A", model.EnumConstant)
 	AssertDef(t, gc, "Outer::NestedScoped", model.Enum)
 	AssertMores(t, gc, "Outer::NestedScoped", constants.EnumIsScoped, true)
+	AssertDef(t, gc, "Outer::NestedScoped::NS_A", model.EnumConstant)
 	AssertDef(t, gc, "Outer::nested_alias_t", model.Type)
 	AssertMores(t, gc, "Outer::nested_alias_t", constants.TypeUnderlying, "int")
 	AssertDef(t, gc, "Outer::Inner", model.Class)
 	AssertFieldsOf(t, gc, "Outer::Inner", []string{"deep"})
 
 	// 访问级别
+	AssertDef(t, gc, "Outer::pub_method()", model.MethodDecl)
 	AssertMores(t, gc, "Outer::pub_method()", constants.Visibility, "public")
 	AssertMores(t, gc, "Outer::prot_field", constants.Visibility, "protected")
+	AssertDef(t, gc, "Outer::prot_method()", model.MethodDecl)
 	AssertMores(t, gc, "Outer::prot_method()", constants.Visibility, "protected")
 	AssertMores(t, gc, "Outer::priv_field", constants.Visibility, "private")
+	AssertDef(t, gc, "Outer::priv_method()", model.MethodDecl)
 	AssertMores(t, gc, "Outer::priv_method()", constants.Visibility, "private")
 
 	// static / const / mutable 成员
+	AssertDef(t, gc, "Outer::static_field", model.Field)
 	AssertMores(t, gc, "Outer::static_field", constants.FieldIsStatic, true)
 	AssertMores(t, gc, "Outer::static_const_field", constants.FieldIsStatic, true)
 	AssertMores(t, gc, "Outer::static_const_field", constants.FieldIsConst, true)
@@ -252,6 +285,7 @@ func TestCollectorCppClass(t *testing.T) {
 	// friend 声明不是成员：不产 Outer::friend_func
 	AssertNoDef(t, gc, "Outer::friend_func(Outer&)")
 	AssertDef(t, gc, "friend_func(Outer&)", model.Function)
+	AssertDef(t, gc, "friend_func(Outer&)::o", model.Variable)
 	// 友元函数声明注册为命名空间级 FunctionDecl（与定义成对）
 	if el := assertElemInFile(t, gc, "collector/cpp/class/cls.cpp", "friend_func(Outer&)", model.FunctionDecl); el == nil {
 		t.Errorf("friend function declaration should be collected as FunctionDecl")
@@ -321,6 +355,19 @@ func TestCollectorCppCtorDtor(t *testing.T) {
 
 	// 成员初始化列表的形参仍是变量元素
 	AssertDef(t, gc, "Widget::Widget(int)::v", model.Variable)
+
+	// explicit / noexcept 修饰符
+	AssertMores(t, gc, "Widget::Widget(const char*)", constants.FunctionIsExplicit, true)
+	AssertNoMores(t, gc, "Widget::Widget(int)", constants.FunctionIsExplicit)
+	AssertMores(t, gc, "Widget::Widget(Widget&&)", constants.FunctionIsNoexcept, true)
+	AssertMores(t, gc, "Widget::operator=(Widget&&)", constants.FunctionIsNoexcept, true)
+	AssertNoMores(t, gc, "Widget::Widget(const Widget&)", constants.FunctionIsNoexcept)
+
+	// = default / = delete 可区分
+	AssertMores(t, gc, "Defaulted::Defaulted()", constants.FunctionIsDefaulted, true)
+	AssertNoMores(t, gc, "Defaulted::Defaulted()", constants.FunctionIsDeleted)
+	AssertMores(t, gc, "Deleted::Deleted()", constants.FunctionIsDeleted, true)
+	AssertNoMores(t, gc, "Deleted::Deleted()", constants.FunctionIsDefaulted)
 }
 
 // =============================================================================
@@ -1035,6 +1082,31 @@ func TestCollectorCppConditional(t *testing.T) {
 	AssertFieldsOf(t, gc, "CondStruct", []string{"cv"})
 	AssertDef(t, gc, "cond_func()", model.FunctionDecl)
 	AssertMores(t, gc, "cond_func()", constants.Condition, "#ifdef FEATURE_G")
+
+	// #if 0 死区：只保留活跃分支（dead.cpp / dead_else.cpp）
+	AssertDef(t, gc, "deadzone", model.Namespace)
+	AssertDef(t, gc, "deadzone::live()", model.Function)
+	AssertNoDef(t, gc, "deadzone::dead_fn()")
+	AssertDef(t, gc, "deadele", model.Namespace)
+	AssertDef(t, gc, "deadele::live_branch()", model.Function)
+	AssertNoDef(t, gc, "deadele::dead_branch()")
+
+	// 跨死区边界不吞区外代码（dead_span.cpp）
+	AssertDef(t, gc, "deadspan", model.Namespace)
+	AssertDef(t, gc, "deadspan::before()", model.Function)
+	AssertDef(t, gc, "deadspan::after()", model.Function)
+	AssertDef(t, gc, "deadspan::chain()", model.Function)
+
+	// 多树动作去重（dup.cpp）：同名局部变量只产一份
+	AssertDef(t, gc, "dupzone", model.Namespace)
+	AssertDef(t, gc, "dupzone::g()", model.Function)
+	AssertDef(t, gc, "dupzone::g()::x", model.Variable)
+
+	// 嵌套条件四组合分支（nested.cpp）
+	AssertDef(t, gc, "nested", model.Namespace)
+	for _, fn := range []string{"f_1_1()", "f_1_2()", "f_2_1()", "f_2_2()"} {
+		AssertDef(t, gc, "nested::"+fn, model.Function)
+	}
 }
 
 // =============================================================================

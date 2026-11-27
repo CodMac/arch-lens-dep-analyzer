@@ -955,12 +955,81 @@ func (ac *actionCtx) handleFieldInitializer(node coreast.Node) {
 	if source == nil {
 		return
 	}
+	// 委托构造：`Delegating() : Delegating(0) {}` 的 field_initializer 目标是宿主类名
+	// 本身（field_identifier 文本 == 类简名），语义为对同类另一构造器的调用。
+	if field.Kind() == "field_identifier" && isConstructorElem(source) {
+		if classQN, className, ok := classScopeOfCtor(source); ok &&
+			strings.TrimSpace(field.Utf8Text(*ac.fCtx.SourceBytes())) == className {
+			if target := ac.resolveDelegatingCtor(classQN, className, node); target != nil {
+				ac.add(model.Call, source, target, node, map[string]interface{}{
+					constants.RelRawText: helper.GetNodeContent(field, *ac.fCtx.SourceBytes()),
+					constants.RelAstKind: "field_initializer",
+				})
+			}
+			return
+		}
+	}
 	target := ac.resolver.ResolveAction(ac.gc, ac.fCtx, field, model.Assign)
 	ac.add(model.Assign, source, target, field, map[string]interface{}{
 		constants.RelRawText:             helper.GetNodeContent(field, *ac.fCtx.SourceBytes()),
 		constants.RelAstKind:             "field_initializer",
 		constants.RelAssignIsInitializer: true,
 	})
+}
+
+// isConstructorElem 判断元素是否为构造函数。
+func isConstructorElem(e *model.CodeElement) bool {
+	if e == nil {
+		return false
+	}
+	v, _ := e.GetMores()[constants.FunctionIsConstructor].(bool)
+	return v
+}
+
+// classScopeOfCtor 从构造器 QN（`A::B::B(...)`）推导宿主类 QN 与类简名。
+func classScopeOfCtor(e *model.CodeElement) (classQN, className string, ok bool) {
+	base := e.QualifiedName
+	if i := strings.IndexByte(base, '('); i >= 0 {
+		base = base[:i]
+	}
+	i := strings.LastIndex(base, "::")
+	if i < 0 {
+		return "", "", false
+	}
+	return base[:i], base[i+2:], true
+}
+
+// resolveDelegatingCtor 按实参个数在宿主类中挑选委托目标构造器（定义优先）。
+func (ac *actionCtx) resolveDelegatingCtor(classQN, className string, node coreast.Node) *model.CodeElement {
+	argc := 0
+	if args := node.NamedChild(1); args != nil && args.Kind() == "argument_list" {
+		argc = args.NamedChildCount()
+	}
+	entries, ok := ac.gc.FindOverloadCandidates(helper.BuildQN(classQN, className))
+	if !ok {
+		return nil
+	}
+	var best *model.CodeElement
+	for _, e := range entries {
+		if e.Element == nil || paramCountOf(e.Element) != argc {
+			continue
+		}
+		if best == nil || (best.Kind == model.MethodDecl && e.Element.Kind == model.Method) {
+			best = e.Element
+		}
+	}
+	return best
+}
+
+// paramCountOf 返回函数元素的参数个数。
+func paramCountOf(e *model.CodeElement) int {
+	if e == nil {
+		return 0
+	}
+	if v, ok := e.GetMores()[constants.FunctionParameters].([]string); ok {
+		return len(v)
+	}
+	return 0
 }
 
 // handleDesignatedInit 处理指定初始化（P p{.x = 1}）的字段赋值。

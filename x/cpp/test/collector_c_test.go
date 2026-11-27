@@ -53,6 +53,9 @@ func TestCollectorCBase(t *testing.T) {
 	AssertDef(t, gc, "ANSWER", model.Macro)
 	AssertMores(t, gc, "ANSWER", constants.MacroBody, "42")
 	AssertMores(t, gc, "ANSWER", constants.MacroIsFunctionLike, false)
+	// 头文件 include guard 宏
+	AssertDef(t, gc, "BASE_H", model.Macro)
+	AssertMores(t, gc, "BASE_H", constants.MacroIsFunctionLike, false)
 
 	// 参数与局部变量
 	AssertDef(t, gc, "add(int,int)::a", model.Variable)
@@ -79,16 +82,20 @@ func TestCollectorCFunc(t *testing.T) {
 	AssertDef(t, gc, "variadic(int,...)", model.Function)
 	AssertMores(t, gc, "variadic(int,...)", constants.FunctionIsVariadic, true)
 	AssertSignature(t, gc, "variadic(int,...)", []string{"int first", "..."})
+	AssertDef(t, gc, "variadic(int,...)::first", model.Variable)
 
 	// 存储类/限定符
 	AssertDef(t, gc, "static_helper(int)", model.Function)
 	AssertMods(t, gc, "static_helper(int)", "static")
+	AssertDef(t, gc, "static_helper(int)::v", model.Variable)
 	AssertDef(t, gc, "inline_helper(int)", model.Function)
 	AssertMods(t, gc, "inline_helper(int)", "inline")
+	AssertDef(t, gc, "inline_helper(int)::v", model.Variable)
 
 	// 递归：函数体作为独立作用域块
 	AssertDef(t, gc, "fact(int)", model.Function)
 	AssertDef(t, gc, "fact(int)::block$1", model.ScopeBlock)
+	AssertDef(t, gc, "fact(int)::n", model.Variable)
 
 	// 函数指针变量 → VARIABLE（不是函数）
 	AssertDef(t, gc, "gfn", model.Variable)
@@ -99,6 +106,7 @@ func TestCollectorCFunc(t *testing.T) {
 	AssertDef(t, gc, "rfp(int)", model.Function)
 	AssertNoKind(t, gc, "rfp(int)", model.Variable)
 	AssertSignature(t, gc, "rfp(int)", []string{"int n"})
+	AssertDef(t, gc, "rfp(int)::n", model.Variable)
 
 	// 返回数组指针的函数 → FUNCTION
 	AssertDef(t, gc, "rap()", model.Function)
@@ -119,6 +127,8 @@ func TestCollectorCDeclDef(t *testing.T) {
 	// 同文件先声明后定义：共享同一 QN，不产生 $2 消歧
 	AssertDef(t, gc, "proto(int)", model.Function)
 	assertElemInFile(t, gc, "collector/c/decl_def/decl_def.c", "proto(int)", model.FunctionDecl)
+	assertElemInFile(t, gc, "collector/c/decl_def/decl_def.h", "proto(int)", model.FunctionDecl)
+	AssertDef(t, gc, "proto(int)::a", model.Variable)
 	AssertNoDef(t, gc, "proto(int)$2")
 
 	// 结构体前向声明 + 定义：定义覆盖声明，同一 QN 只有一个 STRUCT
@@ -145,6 +155,9 @@ func TestCollectorCDeclDef(t *testing.T) {
 	AssertDef(t, gc, "header_only(int)", model.FunctionDecl)
 	AssertMoresInFile(t, gc, "collector/c/decl_def/decl_def.h", "header_only(int)", model.FunctionDecl,
 		constants.FunctionIsDeclaration, true)
+
+	// 头文件 include guard 宏
+	AssertDef(t, gc, "DECL_DEF_H", model.Macro)
 }
 
 // =============================================================================
@@ -169,6 +182,7 @@ func TestCollectorCStruct(t *testing.T) {
 	AssertFieldsOf(t, gc, "Outer::payload", []string{"as_int", "as_float"})
 
 	// 位域
+	AssertDef(t, gc, "Bits", model.Struct)
 	AssertFieldsOf(t, gc, "Bits", []string{"flag", "count"})
 	AssertMores(t, gc, "Bits::flag", constants.FieldRawType, "unsigned int")
 
@@ -305,6 +319,7 @@ func TestCollectorCMacro(t *testing.T) {
 
 	// 头文件宏
 	AssertDef(t, gc, "HEADER_MACRO", model.Macro)
+	AssertDef(t, gc, "MACRO_H", model.Macro) // include guard
 }
 
 // =============================================================================
@@ -328,6 +343,9 @@ func TestCollectorCVariable(t *testing.T) {
 	AssertDef(t, gc, "g_multi1", model.Variable)
 	AssertDef(t, gc, "g_multi2", model.Variable)
 
+	// 函数本身
+	AssertDef(t, gc, "scope_fn(int)", model.Function)
+
 	// 局部变量
 	AssertDef(t, gc, "scope_fn(int)::local", model.Variable)
 	AssertNoMores(t, gc, "scope_fn(int)::local", constants.VariableIsGlobal)
@@ -346,6 +364,7 @@ func TestCollectorCVariable(t *testing.T) {
 	AssertDef(t, gc, "scope_fn(int)::block$1", model.ScopeBlock)
 	AssertDef(t, gc, "scope_fn(int)::block$1::inner", model.Variable)
 	AssertDef(t, gc, "scope_fn(int)::block$2", model.ScopeBlock)
+	AssertDef(t, gc, "scope_fn(int)::block$2::i", model.Variable)
 	AssertDef(t, gc, "scope_fn(int)::block$2::loop_body", model.Variable)
 
 	// 混合声明器：函数 + 变量共存，变量不被丢弃
@@ -361,9 +380,18 @@ func TestCollectorCVariable(t *testing.T) {
 func TestCollectorCParam(t *testing.T) {
 	gc := collectC(t, "param")
 
+	// 参数引用的类型元素
+	AssertDef(t, gc, "S", model.Struct)
+	AssertDef(t, gc, "S::v", model.Field)
+	AssertDef(t, gc, "E", model.Enum)
+	AssertDef(t, gc, "E::E_A", model.EnumConstant)
+	AssertDef(t, gc, "cb_t", model.Type)
+
 	// 具名参数
 	AssertDef(t, gc, "named(int,char*)", model.Function)
 	AssertSignature(t, gc, "named(int,char*)", []string{"int a", "char* p"})
+	AssertDef(t, gc, "named(int,char*)::a", model.Variable)
+	AssertDef(t, gc, "named(int,char*)::p", model.Variable)
 
 	// 无名参数：保留类型，保留 struct/enum 关键字
 	AssertDef(t, gc, "unnamed(int,char*,struct S)", model.Function)
@@ -372,23 +400,33 @@ func TestCollectorCParam(t *testing.T) {
 	// 多级指针
 	AssertDef(t, gc, "multilevel(int**,char***)", model.Function)
 	AssertSignature(t, gc, "multilevel(int**,char***)", []string{"int** pp", "char*** ppp"})
+	AssertDef(t, gc, "multilevel(int**,char***)::pp", model.Variable)
+	AssertDef(t, gc, "multilevel(int**,char***)::ppp", model.Variable)
 
 	// 数组参数
 	AssertDef(t, gc, "arrays(int[],char[])", model.Function)
 	AssertSignature(t, gc, "arrays(int[],char[])", []string{"int[] arr", "char[] buf"})
+	AssertDef(t, gc, "arrays(int[],char[])::arr", model.Variable)
+	AssertDef(t, gc, "arrays(int[],char[])::buf", model.Variable)
 
 	// 函数指针参数
 	AssertDef(t, gc, "func_ptr_param(cb_t,int (*))", model.Function)
 	AssertSignature(t, gc, "func_ptr_param(cb_t,int (*))", []string{"cb_t cb", "int (*) direct"})
+	AssertDef(t, gc, "func_ptr_param(cb_t,int (*))::cb", model.Variable)
+	AssertDef(t, gc, "func_ptr_param(cb_t,int (*))::direct", model.Variable)
 
 	// const 与 struct/enum 关键字
 	AssertDef(t, gc, "qualified(const int*,const struct S*,enum E)", model.Function)
 	AssertSignature(t, gc, "qualified(const int*,const struct S*,enum E)",
 		[]string{"const int* cp", "const struct S* sp", "enum E e"})
+	AssertDef(t, gc, "qualified(const int*,const struct S*,enum E)::cp", model.Variable)
+	AssertDef(t, gc, "qualified(const int*,const struct S*,enum E)::sp", model.Variable)
+	AssertDef(t, gc, "qualified(const int*,const struct S*,enum E)::e", model.Variable)
 
 	// 可变参数
 	AssertDef(t, gc, "mixed(int,...)", model.Function)
 	AssertMores(t, gc, "mixed(int,...)", constants.FunctionIsVariadic, true)
+	AssertDef(t, gc, "mixed(int,...)::first", model.Variable)
 
 	// 无名指针参数不丢 *
 	AssertDef(t, gc, "unnamed(int,char*,struct S)", model.Function)
@@ -401,17 +439,25 @@ func TestCollectorCParam(t *testing.T) {
 func TestCollectorCConditional(t *testing.T) {
 	gc := collectC(t, "cond")
 
+	AssertDef(t, gc, "cond_a", model.Variable)
 	AssertMores(t, gc, "cond_a", constants.Condition, "#ifdef FOO")
+	AssertDef(t, gc, "cond_b", model.Variable)
 	AssertMores(t, gc, "cond_ifndef", constants.Condition, "#ifndef FOO")
+	AssertDef(t, gc, "cond_c", model.Variable)
 	AssertMores(t, gc, "cond_if", constants.Condition, "#if defined(BAR)")
 	// 分支回补后 #elif/#else 分支元素同样产出。
+	AssertDef(t, gc, "cond_elif", model.Variable)
 	AssertMores(t, gc, "cond_elif", constants.Condition, "#elif defined(BAZ)")
+	AssertDef(t, gc, "cond_else", model.Variable)
 	AssertMores(t, gc, "cond_else", constants.Condition, "#else")
 	// 嵌套分支取最内层
+	AssertDef(t, gc, "cond_nested", model.Variable)
 	AssertMores(t, gc, "cond_nested", constants.Condition, "#ifdef INNER")
 	// 条件分支内的函数
 	AssertDef(t, gc, "cond_fn()", model.Function)
 	AssertMores(t, gc, "cond_fn()", constants.Condition, "#ifdef FOO")
+	AssertDef(t, gc, "cond_d()", model.Function)
+	AssertMores(t, gc, "cond_d()", constants.Condition, "#ifndef BAZ")
 }
 
 // =============================================================================
@@ -422,18 +468,24 @@ func TestCollectorCEdge(t *testing.T) {
 	gc := collectC(t, "edge")
 
 	// 类型引用不产元素：struct Tag t; 只产变量，不产新的 STRUCT
+	AssertDef(t, gc, "use_type_ref()", model.Function)
 	AssertDef(t, gc, "use_type_ref()::t", model.Variable)
+	AssertDef(t, gc, "use_type_ref()::local_e", model.Variable)
 	AssertNoKind(t, gc, "use_type_ref()::Tag", model.Struct)
 	// 局部匿名 enum 的常量挂当前作用域，不产 ENUM 元素
 	AssertDef(t, gc, "use_type_ref()::LOCAL_A", model.EnumConstant)
 
 	// 不同块内同名局部变量：各自独立 QN
+	AssertDef(t, gc, "dup_blocks()", model.Function)
 	AssertDef(t, gc, "dup_blocks()::block$1::dup", model.Variable)
 	AssertDef(t, gc, "dup_blocks()::block$2::dup", model.Variable)
 
 	// 同名不同签名函数
 	AssertDef(t, gc, "overload_like(int)", model.Function)
+	AssertDef(t, gc, "overload_like(int)::a", model.Variable)
 	AssertDef(t, gc, "overload_like2(int,int)", model.Function)
+	AssertDef(t, gc, "overload_like2(int,int)::a", model.Variable)
+	AssertDef(t, gc, "overload_like2(int,int)::b", model.Variable)
 
 	// 无名指针参数
 	AssertDef(t, gc, "no_name_ptr(char*)", model.Function)

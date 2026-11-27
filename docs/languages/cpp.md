@@ -3,7 +3,7 @@
 > 适用范围：`x/cpp/` · 与 [qn-format.md](../qn-format.md)（QN 契约）、[language-extension.md](../language-extension.md)（SPI 契约）互为补充
 >
 > 本文档回答「C/C++ 支持到什么程度」：元素/关系覆盖清单、声明-实现配对模型、条件编译策略、实现边界与已知限制。
-> 行为契约由 `x/cpp/testdata/e2e/baseline.golden.jsonl`（5296 行 = 1924 元素 + 3372 关系，LevelBalanced）锚定。
+> 行为契约由 `x/cpp/testdata/e2e/baseline.golden.jsonl`（5297 行 = 1924 元素 + 3373 关系，LevelBalanced）锚定。
 
 ## 1. 总体状态
 
@@ -180,7 +180,7 @@ Collector 末尾（Step 5，全部定义注册与 namespace 汇总之后）统�
 
 | 关系 | 触发点 | 说明 |
 |---|---|---|
-| Call | `call_expression` | 自由函数、`obj.method()`、`ptr->method()`、`Class::staticMethod()`、`ns::func()`、Lambda 变量调用 |
+| Call | `call_expression` / `field_initializer`（委托构造） | 自由函数、`obj.method()`、`ptr->method()`、`Class::staticMethod()`、`ns::func()`、Lambda 变量调用、委托构造 `C() : C(args)` |
 | Create | `new_expression` | C++ `new T(...)`；同时产构造器 CALL |
 | Cast | `cast_expression` / `static_cast` 等 | C 风格 `(T)x` 与 `static_cast<T>(x)`；`(void)x` 抑制形态不产 |
 | Assign | `assignment_expression` / `init_declarator` / `field_initializer` | 含变量初始化与构造器成员初始化列表 `: a(x)` |
@@ -443,7 +443,7 @@ type expr struct {
 | 3 | **条件编译** | 不做宏环境求解（不展开宏、不判定条件真假）；元素按「投影树 + 原始树 + 回补树」合并覆盖全部分支，动作关系遍历全部树并按字节坐标去重（见 §5.0–§5.6） |
 | 4 | **模板实例化** | 不建模具体实例化（`Box<int>` 与 `Box<double>` 共用 `Box` 元素）；QN 中剥离模板实参 |
 | 5 | **模板特化** | 显式特化（`template<> class X<int>`）与偏特化不单独建模，与主模板同 QN 时按重名 `$N` 处理 |
-| 6 | **`= default` / `= delete`** | 无函数体，Kind 保持定义语义（Method），额外记 `cpp.is_declaration=true` |
+| 6 | **`= default` / `= delete`** | 无函数体，Kind 保持定义语义（Method），额外记 `cpp.is_declaration=true`；并分别记 `cpp.function.is_defaulted=true` / `cpp.function.is_deleted=true` 以区分两者 |
 | 7 | **函数指针变量** | `int (*fp)(int)` 识别为变量（非函数声明）；作为参数类型记 `(*)` |
 | 8 | **预处理指令位置** | `#include` 出现在任意位置（含条件分支内）均被收集为文件级 Import，不区分包含位置 |
 | 9 | **多继承** | `base_class_clause` 的多个基类各产一条 EXTEND；不区分 `virtual` 继承语义 |
@@ -585,9 +585,9 @@ Binder 负责 raw 类型文本 → QN。以下缺陷均经探针实测，按优�
 
 - 三层测试 + e2e 黄金回归集，全部位于 `x/cpp/test/`。
 - 测试文件按语言归属拆分：`*_base_test.go`（C/C++ 共享）、`*_c_test.go`（C 独有）、`*_cpp_test.go`（C++ 独有）；共享断言集中在 `assert_helper.go`。
-- e2e 基线：`x/cpp/testdata/e2e/baseline.golden.jsonl`（1924 元素 + 3372 关系，LevelBalanced）。元素与关系条目均含 `Path`，去重键为 `QN|Kind|Path`，跨文件同 QN 不再互相覆盖。
+- e2e 基线：`x/cpp/testdata/e2e/baseline.golden.jsonl`（1924 元素 + 3373 关系，LevelBalanced）。元素与关系条目均含 `Path`，去重键为 `QN|Kind|Path`，跨文件同 QN 不再互相覆盖。
 - 元素覆盖（基线实测）：FILE 126 / NAMESPACE 96 / CLASS 32 / STRUCT 166 / ENUM 31 / ENUM_CONSTANT 67 / TYPE 61 / MACRO 57 / FIELD 232 / FUNCTION 192 / FUNCTION_DECL 75 / METHOD 89 / METHOD_DECL 102 / VARIABLE 528 / SCOPE_BLOCK 39 / LAMBDA 28。
-- 关系覆盖（基线实测）：CONTAIN 2168 / USE 421 / ASSIGN 197 / TYPE_ARG 146 / CALL 101 / IMPL_LINK 89 / PARAMETER 77 / IMPORT 46 / RETURN 38 / EXTEND 29 / CAPTURE 24 / CAST 15 / CREATE 8 / THROW 7 / FRIEND 2。
+- 关系覆盖（基线实测）：CONTAIN 2172 / USE 421 / ASSIGN 197 / TYPE_ARG 146 / CALL 102 / IMPL_LINK 89 / PARAMETER 77 / IMPORT 46 / RETURN 38 / EXTEND 29 / CAPTURE 24 / CAST 15 / CREATE 8 / THROW 7 / FRIEND 2。
 - 基线（LevelBalanced）中 PARAMETER/RETURN 大幅减少，是因为当前样例的参数/返回类型多为基本类型（`int`/`void`），被外部符号降噪过滤；CONTAIN/USE/ASSIGN 等指向源码符号的关系不受影响。
 - 测试用例：
   | 测试 | 覆盖 |
@@ -651,6 +651,7 @@ Binder 负责 raw 类型文本 → QN。以下缺陷均经探针实测，按优�
   | `TestExtractorCppImplLinkStatic` | static 成员函数配对、static 自由函数不配对 |
   | `TestExtractorCppNestedNamespace` | C++17 嵌套 namespace 中间层级元素与边、无悬空 Namespace→File |
   | `TestExtractorCppOutOfLineFileRoot` | 类外/跨文件定义产 File→元素 边 |
+  | `TestExtractorCppDelegatingCtor` | 委托构造 `Delegating() : Delegating(0)` 产 CALL → 同类构造器；普通成员初始化不误产 CALL |
   | `TestLinkerCppTopology` | 文件/命名空间拓扑：File→顶层元素、Namespace→SubNamespace/File、类外定义文件根、类内成员非文件子节点 |
   | `TestLinkerCppImplLinkDirection` | ImplLink 方向定义→声明 |
   | `TestResolverCall` | 自由函数/成员/指针成员/静态/命名空间限定调用 |

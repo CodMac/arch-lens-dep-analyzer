@@ -28,6 +28,14 @@ const (
 	FunctionIsVirtual = "cpp.function.is_virtual"
 	// FunctionIsPureVirtual 是否为纯虚函数 -> bool
 	FunctionIsPureVirtual = "cpp.function.is_pure_virtual"
+	// FunctionIsExplicit 是否为 explicit 转换构造/转换运算符 -> bool
+	FunctionIsExplicit = "cpp.function.is_explicit"
+	// FunctionIsNoexcept 是否声明为 noexcept -> bool
+	FunctionIsNoexcept = "cpp.function.is_noexcept"
+	// FunctionIsDefaulted 是否为 `= default`（编译器默认生成）-> bool
+	FunctionIsDefaulted = "cpp.function.is_defaulted"
+	// FunctionIsDeleted 是否为 `= delete`（显式删除）-> bool
+	FunctionIsDeleted = "cpp.function.is_deleted"
 
 	// VariableRawType 局部变量/全局变量的类型文本 -> string
 	VariableRawType = "cpp.variable.raw_type"

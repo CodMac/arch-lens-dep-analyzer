@@ -1916,6 +1916,22 @@ func (c *Collector) enrichFunction(elem *model.CodeElement, node coreast.Node, s
 		}
 	}
 
+	// explicit / noexcept：explicit 在声明节点上，noexcept 在函数声明符上。
+	if hasChildKind(node, "explicit_function_specifier") || hasChildKind(fd, "explicit_function_specifier") {
+		mores[constants.FunctionIsExplicit] = true
+	}
+	if hasChildKind(node, "noexcept") || hasChildKind(fd, "noexcept") {
+		mores[constants.FunctionIsNoexcept] = true
+	}
+
+	// = default / = delete：function_definition 无函数体，由子句节点区分。
+	if hasChildKind(node, "default_method_clause") {
+		mores[constants.FunctionIsDefaulted] = true
+	}
+	if hasChildKind(node, "delete_method_clause") {
+		mores[constants.FunctionIsDeleted] = true
+	}
+
 	// 名称语义
 	name := elem.Name
 	if strings.HasPrefix(name, "operator") {
@@ -1927,6 +1943,19 @@ func (c *Collector) enrichFunction(elem *model.CodeElement, node coreast.Node, s
 	if node.ChildByFieldName("type") == nil && !strings.HasPrefix(name, "~") && !strings.HasPrefix(name, "operator") {
 		mores[constants.FunctionIsConstructor] = true
 	}
+}
+
+// hasChildKind 判断节点是否含指定 kind 的直接子节点。
+func hasChildKind(node coreast.Node, kind string) bool {
+	if node == nil {
+		return false
+	}
+	for i := 0; i < node.ChildCount(); i++ {
+		if node.Child(i).Kind() == kind {
+			return true
+		}
+	}
+	return false
 }
 
 func scanModifiers(node coreast.Node, src []byte, mods *[]string, isVirtual *bool) {
