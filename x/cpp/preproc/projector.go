@@ -124,8 +124,14 @@ func ProjectWithOptions(src []byte, opts Options) Result {
 		for i, b := range g.branches {
 			r := Region{Start: b.start, End: b.end, Label: b.label, Depth: g.depth}
 			if g.dead {
-				r.Dead = true
-				dead = append(dead, r)
+				// #if 0：仅 #if 分支恒死；#elif/#else 分支无法静态判定，
+				// 按「多收」原则保留（记为 dropped，非死区），由原始树补元素。
+				if i == 0 {
+					r.Dead = true
+					dead = append(dead, r)
+				} else {
+					dropped = append(dropped, r)
+				}
 				continue
 			}
 			if i == ci {
@@ -326,7 +332,13 @@ func blankUnselected(out, src []byte, groups []*group, chosen map[int]int, opts 
 		active, inDead := true, false
 		for _, g := range stack {
 			if g.dead {
-				active, inDead = false, true
+				// 只有 #if 分支是死区；#elif/#else 分支按未选中分支处理（非死区）。
+				b0 := g.branches[0]
+				if pos >= b0.start && pos < b0.end {
+					active, inDead = false, true
+				} else {
+					active = false
+				}
 				break
 			}
 			ci := chosen[g.start]

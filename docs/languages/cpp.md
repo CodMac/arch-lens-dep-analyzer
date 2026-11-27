@@ -3,7 +3,7 @@
 > 适用范围：`x/cpp/` · 与 [qn-format.md](../qn-format.md)（QN 契约）、[language-extension.md](../language-extension.md)（SPI 契约）互为补充
 >
 > 本文档回答「C/C++ 支持到什么程度」：元素/关系覆盖清单、声明-实现配对模型、条件编译策略、实现边界与已知限制。
-> 行为契约由 `x/cpp/testdata/e2e/baseline.golden.jsonl`（5289 行 = 1921 元素 + 3368 关系，LevelBalanced）锚定。
+> 行为契约由 `x/cpp/testdata/e2e/baseline.golden.jsonl`（5296 行 = 1924 元素 + 3372 关系，LevelBalanced）锚定。
 
 ## 1. 总体状态
 
@@ -270,7 +270,7 @@ tree-sitter **不做宏展开**，条件编译各分支在 AST 中互斥，且�
 - 投影结果与输入**等长**，Location（行列号）无需映射；AST 节点的字节偏移可直接用于原始源码取文本。
 - 指令行本身也置空格，避免 `#` token 进入 AST。
 - 未选中分支中的 `#include/#define/#undef/#pragma` 默认保留（`Options.KeepIncludes=true`），保证 IMPORT 关系不因投影丢失；其条件标签由 `Dropped` 区间回填。
-- `#if 0` 组整组丢弃（含全部 `#elif/#else` 及组内 include）。
+- `#if 0` 只丢弃**恒死的 `#if` 分支**；`#elif/#else` 分支无法静态判定真假，按「多收」原则保留（记入 `Dropped` 而非死区，由原始树补元素，组内 include 亦保留）。
 - 分支选择：优先选首个**括号平衡**的分支（避免 `#if` 劈裂的语法片段）；`Options.Branch=N` 可指定统一分支序号（1 起，零值表示按 `Pass` 策略）。
 - 续行处理：多行指令（`#if ... \`）与保留的多行宏（`#define M(x) \`）必须整组置空/整组保留，否则悬挂反斜杠会把后续行甚至 `#endif` 吞进宏体。
 
@@ -317,7 +317,7 @@ Collector 依次遍历三组树根收集元素，`AddDefinition` 按 `QN + Kind 
 
 ### 5.6 `#if 0` 死区
 
-`preproc.Result.Dead` 记录 `#if 0` 组的全部分支区间（`Region.Dead=true`）。原始树会保留死区代码，因此：
+`preproc.Result.Dead` 只记录 `#if 0` 组的**恒死 `#if` 分支**区间（`Region.Dead=true`）；`#elif/#else` 分支按「多收」原则记入 `Dropped`（非死区），其代码由原始树补入。原始树会保留死区代码，因此：
 
 - Collector 在 `collectBasicDefinitions` 入口与 `walkIncludes` 中跳过死区节点；
 - Extractor 在 `add` 中跳过死区节点。
@@ -325,6 +325,8 @@ Collector 依次遍历三组树根收集元素，`AddDefinition` 按 `QN + Kind 
 **判定必须要求「完全包含」**（`start >= r.Start && end <= r.End`），不能只看起始字节：tree-sitter 的错误恢复会在死区边界产出跨区 `ERROR` 节点（起点在死区内、终点在区外，实测可跨 667 行），只看起点会把 `#endif` 之后的整段正常代码误判为死区而丢弃（cpp-httplib `test.cc` 曾因此丢 315 个元素）。
 
 死区代码**不入图**（不产元素、不产关系），也不打 `cpp.condition` 标签——它永远不会被编译，不应参与架构度量。
+
+> **「多收」原则**：条件编译无法静态求值时，一律倾向保留（多收）而非丢弃（漏收）。`#if 0` 只对**文本精确匹配**的 `#if 0` / `#if (0)`（可带尾注释）生效，且只丢弃恒死的 `#if` 分支；`#if 0L`、`#if 0 && X`、`#if false`、`#if defined(NEVER)` 等语义恒假但文本不匹配的形式不识别为死区，其代码按普通条件分支保留（可能多收，但绝不漏收）。
 
 ### 5.7 宏归一化（`preproc.NormalizeMacros`）
 
@@ -583,7 +585,7 @@ Binder 负责 raw 类型文本 → QN。以下缺陷均经探针实测，按优�
 
 - 三层测试 + e2e 黄金回归集，全部位于 `x/cpp/test/`。
 - 测试文件按语言归属拆分：`*_base_test.go`（C/C++ 共享）、`*_c_test.go`（C 独有）、`*_cpp_test.go`（C++ 独有）；共享断言集中在 `assert_helper.go`。
-- e2e 基线：`x/cpp/testdata/e2e/baseline.golden.jsonl`（1921 元素 + 3368 关系，LevelBalanced）。元素条目含 `Path`，去重键为 `QN|Kind|Path`，跨文件同 QN 不再互相覆盖。
+- e2e 基线：`x/cpp/testdata/e2e/baseline.golden.jsonl`（1924 元素 + 3372 关系，LevelBalanced）。元素与关系条目均含 `Path`，去重键为 `QN|Kind|Path`，跨文件同 QN 不再互相覆盖。
 - 元素覆盖（基线实测）：FILE 126 / NAMESPACE 96 / CLASS 32 / STRUCT 166 / ENUM 31 / ENUM_CONSTANT 67 / TYPE 61 / MACRO 57 / FIELD 232 / FUNCTION 192 / FUNCTION_DECL 75 / METHOD 89 / METHOD_DECL 102 / VARIABLE 528 / SCOPE_BLOCK 39 / LAMBDA 28。
 - 关系覆盖（基线实测）：CONTAIN 2168 / USE 421 / ASSIGN 197 / TYPE_ARG 146 / CALL 101 / IMPL_LINK 89 / PARAMETER 77 / IMPORT 46 / RETURN 38 / EXTEND 29 / CAPTURE 24 / CAST 15 / CREATE 8 / THROW 7 / FRIEND 2。
 - 基线（LevelBalanced）中 PARAMETER/RETURN 大幅减少，是因为当前样例的参数/返回类型多为基本类型（`int`/`void`），被外部符号降噪过滤；CONTAIN/USE/ASSIGN 等指向源码符号的关系不受影响。
@@ -625,6 +627,7 @@ Binder 负责 raw 类型文本 → QN。以下缺陷均经探针实测，按优�
   | `TestConditionalNestedActions` | 嵌套 4 组合分支：4 个函数各产 1 条 CALL（原始树补齐） |
   | `TestConditionalNestedConditions` | 嵌套 4 组合的 `cpp.condition` 标签（`#ifdef INNER` / `#else`） |
   | `TestConditionalDeadZone` | `#if 0` 死区：`dead_fn()` 及 `dead_call` 关系不入图 |
+  | `TestConditionalDeadElseKeepsLiveBranch` | `#if 0 ... #else`：`#else` 活跃分支的 `live_branch()` 与调用保留，`#if` 死分支不入图 |
   | `TestConditionalDeadZoneSpan` | 跨死区 ERROR 节点：死区判定须完全包含，`#endif` 后代码不得被吞 |
   | `TestConditionalNoDuplicateActions` | 多树遍历去重：`g()` 内 CALL 恰为 2 条，全局无重复关系 |
   | `TestCollectorCppEdge` | 重名消歧、匿名 struct/union 承载、类型引用负例、前向声明、空 struct/函数、无名参数 |

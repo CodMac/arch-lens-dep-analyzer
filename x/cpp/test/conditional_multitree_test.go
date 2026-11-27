@@ -83,6 +83,30 @@ func TestConditionalDeadZone(t *testing.T) {
 	}
 }
 
+// TestConditionalDeadElseKeepsLiveBranch #if 0 的 #else 分支是活跃代码，必须收集。
+//
+// 语义：#if 0 时只有 #if 分支恒死，#else 分支才是编译的活跃代码。
+// 死区只应覆盖 #if 分支，#else 内的元素与关系不得丢失（多收原则）。
+func TestConditionalDeadElseKeepsLiveBranch(t *testing.T) {
+	gc, rels := collectCond(t)
+
+	AssertDef(t, gc, "deadele::live_branch()", model.Function)
+	FindRel(t, rels, func(r *model.DependencyRelation) bool {
+		return r.Type == model.Call &&
+			r.Source.QualifiedName == "deadele::live_branch()" &&
+			r.Target.QualifiedName == "live_branch_call"
+	})
+
+	if DefExists(gc, "deadele::dead_branch()") {
+		t.Errorf("dead_branch() in #if 0 branch should not be collected")
+	}
+	if HasRel(rels, func(r *model.DependencyRelation) bool {
+		return r.Target != nil && r.Target.QualifiedName == "dead_branch_call"
+	}) {
+		t.Errorf("dead_branch_call relation in #if 0 branch should not be emitted")
+	}
+}
+
 // TestConditionalDeadZoneSpan 死区边界不得吞掉区外代码。
 //
 // tree-sitter 在 `#if 0` 处会产出起点在死区内、终点在区外的跨区 ERROR 节点；

@@ -80,6 +80,30 @@ func TestIfZeroDropped(t *testing.T) {
 	}
 }
 
+// TestIfZeroElseKeepsLiveBranch #if 0 只丢弃 #if 分支，#else 分支按多收保留。
+func TestIfZeroElseKeepsLiveBranch(t *testing.T) {
+	src := []byte("#if 0\nvoid dead_fn(){}\n#else\nvoid live_fn(){}\n#endif\n")
+	res := Project(src)
+	if len(res.Dead) != 1 {
+		t.Fatalf("dead regions = %d, want 1 (only #if branch)", len(res.Dead))
+	}
+	// #else 分支必须落在 Dropped（非死区），供原始树补元素。
+	foundElse := false
+	for _, r := range res.Dropped {
+		if strings.Contains(r.Label, "else") {
+			foundElse = true
+		}
+	}
+	if !foundElse {
+		t.Errorf("#else branch should be in Dropped (live, 多收), got dropped=%v", res.Dropped)
+	}
+	for _, r := range res.Dead {
+		if strings.Contains(r.Label, "else") {
+			t.Errorf("#else branch must not be marked Dead")
+		}
+	}
+}
+
 // TestHasInclude 无法静态判定的条件选首分支。
 func TestHasInclude(t *testing.T) {
 	src := loadFixture(t, "has_include.cpp")
