@@ -197,7 +197,18 @@ func implSignature(elem *model.CodeElement) string {
 		}
 		types = append(types, canonicalParamType(p, q))
 	}
-	return stripParamList(elem.QualifiedName) + "(" + strings.Join(types, ",") + ")"
+	base, qual := splitTrailingQualifier(elem.QualifiedName)
+	return stripParamList(base) + "(" + strings.Join(types, ",") + ")" + qual
+}
+
+// splitTrailingQualifier 把 QN 拆成「参数列表结尾部分」与「cv/ref 限定符后缀」：
+// `C::f(int) const` → (`C::f(int)`, ` const`)。
+func splitTrailingQualifier(qn string) (string, string) {
+	i := strings.LastIndex(qn, ")")
+	if i < 0 || i == len(qn)-1 {
+		return qn, ""
+	}
+	return qn[:i+1], qn[i+1:]
 }
 
 // canonicalParamType 生成参数类型的规范化文本：

@@ -771,7 +771,7 @@ func TestResolverCppReturnExternalChain(t *testing.T) {
 	// makeSvc().run() → ret::Svc::run()（源码方法）
 	FindRel(t, ec.Relations, func(r *model.DependencyRelation) bool {
 		return r.Type == model.Call && r.Source.QualifiedName == "ret::useSourceChain()" &&
-			r.Target.QualifiedName == "ret::Svc::run()" && !r.Target.IsFormExternal
+			r.Target.QualifiedName == "ret::Svc::run() const" && !r.Target.IsFormExternal
 	})
 }
 

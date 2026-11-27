@@ -446,6 +446,7 @@ C/C++ 的 QN 分隔符为 **`::`**（`x/cpp/symbol_builder`），其余拼接语
 - 仅类型不含名：`add(int a, int b)` → `add(int,int)`。
 - 保留指针/引用/const：`const char*`、`int&`。
 - 数组 → `[]`；函数指针参数 → `(*)`；可变参数 → `...`。
+- **成员函数的 cv/ref 限定符计入签名**（参数列表之后）：`int get() const` → `get() const`、`void f() &` → `f() &`、`void g() const &&` → `g() const &&`。限定符是 C++ 函数签名的一部分，仅靠 const 区分的重载（`int& operator[](int)` 与 `const int& operator[](int) const`）必须产出不同 QN，否则会被 `QN|Kind` 去重合并。
 - `f(void)` → `f()`。
 - **模板实参从 QN 剥离**：`app::Box<int>::run` → `app::Box::run(int)`；模板参数原文记 `cpp.template.params`。
 

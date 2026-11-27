@@ -377,10 +377,10 @@ func TestCollectorCppCtorDtor(t *testing.T) {
 func TestCollectorCppOperator(t *testing.T) {
 	gc := collectCpp(t, "operator")
 
-	// 算术运算符
+	// 算术运算符（cv/ref 限定符是签名的一部分，const 成员带 " const"）
 	for _, qn := range []string{
-		"Num::operator+(const Num&)", "Num::operator-(const Num&)",
-		"Num::operator*(int)", "Num::operator+=(const Num&)",
+		"Num::operator+(const Num&) const", "Num::operator-(const Num&) const",
+		"Num::operator*(int) const", "Num::operator+=(const Num&)",
 	} {
 		AssertDef(t, gc, qn, model.MethodDecl)
 		AssertMores(t, gc, qn, constants.FunctionIsOperator, true)
@@ -388,8 +388,8 @@ func TestCollectorCppOperator(t *testing.T) {
 
 	// 比较运算符
 	for _, qn := range []string{
-		"Num::operator==(const Num&)", "Num::operator!=(const Num&)",
-		"Num::operator<(const Num&)", "Num::operator<=(const Num&)",
+		"Num::operator==(const Num&) const", "Num::operator!=(const Num&) const",
+		"Num::operator<(const Num&) const", "Num::operator<=(const Num&) const",
 	} {
 		AssertDef(t, gc, qn, model.MethodDecl)
 		AssertMores(t, gc, qn, constants.FunctionIsOperator, true)
@@ -398,9 +398,12 @@ func TestCollectorCppOperator(t *testing.T) {
 	// 赋值运算符（引用返回）
 	AssertDef(t, gc, "Num::operator=(const Num&)", model.MethodDecl)
 	AssertDef(t, gc, "Num::operator=(Num&&)", model.MethodDecl)
+	AssertMores(t, gc, "Num::operator=(Num&&)", constants.FunctionIsNoexcept, true)
 
 	// 下标 / 调用运算符（可重载）
+	// 仅靠 const 区分的两个 operator[] 是不同重载，QN 带限定符后不再被合并。
 	AssertDef(t, gc, "Num::operator[](int)", model.MethodDecl)
+	AssertDef(t, gc, "Num::operator[](int) const", model.MethodDecl)
 	AssertDef(t, gc, "Num::operator()()", model.MethodDecl)
 	AssertDef(t, gc, "Num::operator()(int,int)", model.MethodDecl)
 
@@ -410,20 +413,23 @@ func TestCollectorCppOperator(t *testing.T) {
 	AssertDef(t, gc, "Num::operator--()", model.MethodDecl)
 	AssertDef(t, gc, "Num::operator--(int)", model.MethodDecl)
 
-	// 转换运算符
-	AssertDef(t, gc, "Num::operator bool()", model.MethodDecl)
-	AssertDef(t, gc, "Num::operator int()", model.MethodDecl)
-	AssertMores(t, gc, "Num::operator bool()", constants.FunctionIsOperator, true)
+	// 转换运算符：转换目标类型建模为返回类型
+	AssertDef(t, gc, "Num::operator bool() const", model.MethodDecl)
+	AssertDef(t, gc, "Num::operator int() const", model.MethodDecl)
+	AssertMores(t, gc, "Num::operator bool() const", constants.FunctionIsOperator, true)
+	AssertMores(t, gc, "Num::operator bool() const", constants.FunctionIsExplicit, true)
+	AssertMores(t, gc, "Num::operator bool() const", constants.FunctionReturnType, "bool")
+	AssertMores(t, gc, "Num::operator int() const", constants.FunctionReturnType, "int")
 
 	// 内存分配运算符
 	AssertDef(t, gc, "Num::operator new(unsigned long)", model.MethodDecl)
 	AssertDef(t, gc, "Num::operator delete(void*)", model.MethodDecl)
 
 	// 逻辑 / 位运算
-	AssertDef(t, gc, "Num::operator!()", model.MethodDecl)
-	AssertDef(t, gc, "Num::operator&(const Num&)", model.MethodDecl)
-	AssertDef(t, gc, "Num::operator|(const Num&)", model.MethodDecl)
-	AssertDef(t, gc, "Num::operator~()", model.MethodDecl)
+	AssertDef(t, gc, "Num::operator!() const", model.MethodDecl)
+	AssertDef(t, gc, "Num::operator&(const Num&) const", model.MethodDecl)
+	AssertDef(t, gc, "Num::operator|(const Num&) const", model.MethodDecl)
+	AssertDef(t, gc, "Num::operator~() const", model.MethodDecl)
 
 	// 非成员运算符
 	AssertDef(t, gc, "operator+(int,const Num&)", model.FunctionDecl)

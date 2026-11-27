@@ -3,7 +3,7 @@
 > 适用范围：`x/cpp/` · 与 [qn-format.md](../qn-format.md)（QN 契约）、[language-extension.md](../language-extension.md)（SPI 契约）互为补充
 >
 > 本文档回答「C/C++ 支持到什么程度」：元素/关系覆盖清单、声明-实现配对模型、条件编译策略、实现边界与已知限制。
-> 行为契约由 `x/cpp/testdata/e2e/baseline.golden.jsonl`（5297 行 = 1924 元素 + 3373 关系，LevelBalanced）锚定。
+> 行为契约由 `x/cpp/testdata/e2e/baseline.golden.jsonl`（5320 行 = 1933 元素 + 3387 关系，LevelBalanced）锚定。
 
 ## 1. 总体状态
 
@@ -438,7 +438,7 @@ type expr struct {
 
 | # | 边界 | 说明 |
 |---|---|---|
-| 1 | **运算符重载** | `a + b` 不建模为 `operator+` 调用（已确认的已知限制）。`operator=`/`operator==` 等**成员声明**仍作为 Method/MethodDecl 元素收集 |
+| 1 | **运算符重载** | `a + b` 不建模为 `operator+` 调用（已确认的已知限制）。`operator=`/`operator==` 等**成员声明**仍作为 Method/MethodDecl 元素收集。转换运算符 `operator T()` 的转换目标类型记为返回类型（`cpp.function.return_type`），并产 `RETURN → T` |
 | 2 | **宏不展开** | `#define` 只收集宏名+宏体，不参与符号解析；宏调用的语义无法追踪 |
 | 3 | **条件编译** | 不做宏环境求解（不展开宏、不判定条件真假）；元素按「投影树 + 原始树 + 回补树」合并覆盖全部分支，动作关系遍历全部树并按字节坐标去重（见 §5.0–§5.6） |
 | 4 | **模板实例化** | 不建模具体实例化（`Box<int>` 与 `Box<double>` 共用 `Box` 元素）；QN 中剥离模板实参 |
@@ -585,9 +585,9 @@ Binder 负责 raw 类型文本 → QN。以下缺陷均经探针实测，按优�
 
 - 三层测试 + e2e 黄金回归集，全部位于 `x/cpp/test/`。
 - 测试文件按语言归属拆分：`*_base_test.go`（C/C++ 共享）、`*_c_test.go`（C 独有）、`*_cpp_test.go`（C++ 独有）；共享断言集中在 `assert_helper.go`。
-- e2e 基线：`x/cpp/testdata/e2e/baseline.golden.jsonl`（1924 元素 + 3373 关系，LevelBalanced）。元素与关系条目均含 `Path`，去重键为 `QN|Kind|Path`，跨文件同 QN 不再互相覆盖。
+- e2e 基线：`x/cpp/testdata/e2e/baseline.golden.jsonl`（1933 元素 + 3387 关系，LevelBalanced）。元素与关系条目均含 `Path`，去重键为 `QN|Kind|Path`，跨文件同 QN 不再互相覆盖。
 - 元素覆盖（基线实测）：FILE 126 / NAMESPACE 96 / CLASS 32 / STRUCT 166 / ENUM 31 / ENUM_CONSTANT 67 / TYPE 61 / MACRO 57 / FIELD 232 / FUNCTION 192 / FUNCTION_DECL 75 / METHOD 89 / METHOD_DECL 102 / VARIABLE 528 / SCOPE_BLOCK 39 / LAMBDA 28。
-- 关系覆盖（基线实测）：CONTAIN 2172 / USE 421 / ASSIGN 197 / TYPE_ARG 146 / CALL 102 / IMPL_LINK 89 / PARAMETER 77 / IMPORT 46 / RETURN 38 / EXTEND 29 / CAPTURE 24 / CAST 15 / CREATE 8 / THROW 7 / FRIEND 2。
+- 关系覆盖（基线实测）：CONTAIN 2183 / USE 421 / ASSIGN 197 / TYPE_ARG 146 / CALL 102 / IMPL_LINK 90 / PARAMETER 77 / IMPORT 46 / RETURN 40 / EXTEND 29 / CAPTURE 24 / CAST 15 / CREATE 8 / THROW 7 / FRIEND 2。
 - 基线（LevelBalanced）中 PARAMETER/RETURN 大幅减少，是因为当前样例的参数/返回类型多为基本类型（`int`/`void`），被外部符号降噪过滤；CONTAIN/USE/ASSIGN 等指向源码符号的关系不受影响。
 - 测试用例：
   | 测试 | 覆盖 |
@@ -612,7 +612,7 @@ Binder 负责 raw 类型文本 → QN。以下缺陷均经探针实测，按优�
   | `TestCollectorCppDeclDef` | 同文件声明+定义、头文件原型、前向声明覆盖、类外定义、extern 声明+定义、只声明不定义、原型形参不下钻 |
   | `TestCollectorCppClass` | 访问级别、嵌套 class/struct/enum、friend、static/const/mutable 成员、final、抽象类 |
   | `TestCollectorCppCtorDtor` | 默认/带参/explicit/拷贝/移动/双参构造、析构、`= default`/`= delete`、委托构造、成员初始化列表 |
-  | `TestCollectorCppOperator` | 算术/比较/赋值/下标/调用/自增自减/转换运算符/内存分配/逻辑位运算、成员与非成员 |
+  | `TestCollectorCppOperator` | 算术/比较/赋值/下标/调用/自增自减/转换运算符/内存分配/逻辑位运算、成员与非成员；仅靠 const 区分的重载（`operator[](int)` / `operator[](int) const`）分别收集；转换目标记为返回类型 |
   | `TestCollectorCppTemplate` | 类/函数模板、可变参数、默认模板参数、全特化/偏特化（QN 剥离实参）、别名模板、concept |
   | `TestCollectorCppInherit` | 单/多继承、virtual 继承、菱形、private/protected 继承、override/final |
   | `TestCollectorCppEnum` | 普通 enum / enum class / 指定底层类型 / 前向声明 / 匿名 enum / 显式值 |
@@ -652,6 +652,7 @@ Binder 负责 raw 类型文本 → QN。以下缺陷均经探针实测，按优�
   | `TestExtractorCppNestedNamespace` | C++17 嵌套 namespace 中间层级元素与边、无悬空 Namespace→File |
   | `TestExtractorCppOutOfLineFileRoot` | 类外/跨文件定义产 File→元素 边 |
   | `TestExtractorCppDelegatingCtor` | 委托构造 `Delegating() : Delegating(0)` 产 CALL → 同类构造器；普通成员初始化不误产 CALL |
+  | `TestExtractorCppConversionOperator` | 转换运算符目标类型产 RETURN（源码类型/外部基本类型）；类外定义与类内声明共享带 cv 限定符 QN 并 ImplLink 配对 |
   | `TestLinkerCppTopology` | 文件/命名空间拓扑：File→顶层元素、Namespace→SubNamespace/File、类外定义文件根、类内成员非文件子节点 |
   | `TestLinkerCppImplLinkDirection` | ImplLink 方向定义→声明 |
   | `TestResolverCall` | 自由函数/成员/指针成员/静态/命名空间限定调用 |

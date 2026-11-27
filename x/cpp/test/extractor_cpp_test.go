@@ -229,7 +229,7 @@ func TestExtractorCppActions(t *testing.T) {
 	// --- Call：const 成员 ---
 	FindRel(t, rels, func(r *model.DependencyRelation) bool {
 		return r.Type == model.Call && r.Source.QualifiedName == "act::caller(int)" &&
-			r.Target.QualifiedName == "act::Target::get()"
+			r.Target.QualifiedName == "act::Target::get() const"
 	})
 
 	// --- Create + 构造器 CALL ---
@@ -836,4 +836,30 @@ func TestExtractorCppIncludeSameDir(t *testing.T) {
 			t.Errorf("base.cpp 的 base.h 误命中跨目录 collector/c/base/base.h")
 		}
 	}
+}
+
+// TestExtractorCppConversionOperator 转换运算符：转换目标类型建模为返回类型产 RETURN；
+// 类外定义与类内声明共享带 cv 限定符的 QN，并由 ImplLink 配对。
+func TestExtractorCppConversionOperator(t *testing.T) {
+	paths := ResolvePaths(t, "extractor/cpp/conv_op", "*.cpp")
+	ec := RunPipeline(t, "x/cpp/testdata", paths, core.LevelRaw)
+
+	// 类外定义 operator Target() const → RETURN cv::Target（源码类型）
+	FindRel(t, ec.Relations, func(r *model.DependencyRelation) bool {
+		return r.Type == model.Return &&
+			r.Source.QualifiedName == "cv::Holder::operator Target() const" &&
+			r.Target.QualifiedName == "cv::Target" && !r.Target.IsFormExternal
+	})
+	// 类内声明 operator bool() const → RETURN bool（外部基本类型）
+	FindRel(t, ec.Relations, func(r *model.DependencyRelation) bool {
+		return r.Type == model.Return &&
+			r.Source.QualifiedName == "cv::Holder::operator bool() const" &&
+			r.Target.QualifiedName == "bool" && r.Target.IsFormExternal
+	})
+	// 声明/定义共享 QN，ImplLink 定义→声明
+	FindRel(t, ec.Relations, func(r *model.DependencyRelation) bool {
+		return r.Type == model.ImplLink &&
+			r.Source.QualifiedName == "cv::Holder::operator Target() const" &&
+			r.Target.QualifiedName == "cv::Holder::operator Target() const"
+	})
 }

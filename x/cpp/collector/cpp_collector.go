@@ -1328,6 +1328,20 @@ func declaratorFullName(decl coreast.Node, src []byte) (string, bool) {
 		// 结构化绑定（auto [a, b] = ...）：无单一名称，由 identifyDeclaration 展开。
 		return "", false
 	case "qualified_identifier":
+		// 类外转换运算符（Holder::operator Target）的 name 是 operator_cast，
+		// 其文本含空格；整体 normalizeQualified 会去空白拼成 operatorTarget()const。
+		// 按 scope/name 结构化拼接，名称部分交给 operator_cast 分支归一化。
+		if name := decl.ChildByFieldName("name"); name != nil && name.Kind() == "operator_cast" {
+			n, _ := declaratorFullName(name, src)
+			if scope := decl.ChildByFieldName("scope"); scope != nil {
+				s, _ := declaratorFullName(scope, src)
+				if s == "" {
+					s = normalizeQualified(helper.GetNodeContent(scope, src))
+				}
+				return s + helper.QNSep + n, true
+			}
+			return n, true
+		}
 		return normalizeQualified(decl.Utf8Text(src)), true
 	case "template_function":
 		// 函数模板显式特化（template <> void f<int>(...)）的名称节点：
@@ -1596,11 +1610,11 @@ func isBlockScope(node coreast.Node) bool {
 func paramSignature(decl coreast.Node, src []byte) string {
 	fd := findFunctionDeclarator(decl)
 	if fd == nil {
-		return "()"
+		return "()" + signatureQualifier(decl, src)
 	}
 	pNode := fd.ChildByFieldName("parameters")
 	if pNode == nil {
-		return "()"
+		return "()" + signatureQualifier(decl, src)
 	}
 	var types []string
 	for i := 0; i < pNode.NamedChildCount(); i++ {
@@ -1614,7 +1628,73 @@ func paramSignature(decl coreast.Node, src []byte) string {
 	if len(types) == 1 && types[0] == "void" {
 		types = nil
 	}
-	return "(" + strings.Join(types, ",") + ")"
+	return "(" + strings.Join(types, ",") + ")" + signatureQualifier(decl, src)
+}
+
+// signatureQualifier 返回成员函数的 cv/ref 限定符后缀（如 " const"、" const &"）。
+// 限定符是 C++ 函数签名的一部分：`int& f(int)` 与 `const int& f(int) const`
+// 是不同重载，若不计入 QN 会因 QN+Kind 相同被去重合并。
+func signatureQualifier(decl coreast.Node, src []byte) string {
+	fd := findSignatureCarrier(decl)
+	if fd == nil {
+		return ""
+	}
+	var parts []string
+	for i := 0; i < fd.ChildCount(); i++ {
+		ch := fd.Child(i)
+		switch ch.Kind() {
+		case "type_qualifier", "ref_qualifier":
+			if t := strings.TrimSpace(ch.Utf8Text(src)); t != "" {
+				parts = append(parts, t)
+			}
+		}
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return " " + strings.Join(parts, " ")
+}
+
+// findOperatorCast 在声明器链中查找转换运算符节点（operator_cast）。
+func findOperatorCast(decl coreast.Node) coreast.Node {
+	for decl != nil {
+		switch decl.Kind() {
+		case "operator_cast":
+			return decl
+		case "qualified_identifier":
+			decl = decl.ChildByFieldName("name")
+		case "function_declarator":
+			decl = decl.ChildByFieldName("declarator")
+		case "pointer_declarator", "reference_declarator", "init_declarator", "array_declarator":
+			decl = innerDeclarator(decl)
+		default:
+			return nil
+		}
+	}
+	return nil
+}
+
+// findSignatureCarrier 定位承载 cv/ref 限定符的声明器节点：
+// 普通函数是 function_declarator；转换运算符是 operator_cast 内的
+// abstract_function_declarator（类外定义外面还包一层 qualified_identifier）。
+func findSignatureCarrier(decl coreast.Node) coreast.Node {
+	for decl != nil {
+		switch decl.Kind() {
+		case "function_declarator", "abstract_function_declarator":
+			return decl
+		case "operator_cast":
+			decl = decl.ChildByFieldName("declarator")
+		case "qualified_identifier":
+			decl = decl.ChildByFieldName("name")
+		case "pointer_declarator", "reference_declarator", "init_declarator", "array_declarator":
+			decl = innerDeclarator(decl)
+		case "parenthesized_declarator":
+			return findFunctionDeclaratorInParens(decl)
+		default:
+			return nil
+		}
+	}
+	return nil
 }
 
 // findFunctionDeclarator 沿声明器链找到「被声明实体自身」的 function_declarator。
@@ -1851,6 +1931,13 @@ func (c *Collector) enrichFunction(elem *model.CodeElement, node coreast.Node, s
 	// 返回类型
 	if t := node.ChildByFieldName("type"); t != nil {
 		mores[constants.FunctionReturnType] = normalizeTypeText(helper.GetNodeContent(t, src))
+	}
+	// 转换运算符 `operator T()`：语法上无返回类型，转换目标 T 由 operator_cast
+	// 的 type 字段给出，作为返回类型建模（下游据此产 RETURN 关系）。
+	if oc := findOperatorCast(decl); oc != nil {
+		if t := oc.ChildByFieldName("type"); t != nil {
+			mores[constants.FunctionReturnType] = normalizeTypeText(helper.GetNodeContent(t, src))
+		}
 	}
 
 	// 参数列表

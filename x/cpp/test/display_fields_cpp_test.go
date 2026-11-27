@@ -158,7 +158,7 @@ func TestCollectorCppDisplayFieldsEdge(t *testing.T) {
 		AssertDisplayFields(t, gc, "misc::Defaulted::Defaulted(const Defaulted&)",
 			"misc", "misc::Defaulted", "misc::Defaulted")
 		AssertDisplayFields(t, gc, "misc::Operated::operator+=(int)", "misc", "misc::Operated", "misc::Operated")
-		AssertDisplayFields(t, gc, "misc::Operated::operator bool()", "misc", "misc::Operated", "misc::Operated")
+		AssertDisplayFields(t, gc, "misc::Operated::operator bool() const", "misc", "misc::Operated", "misc::Operated")
 		// extern "C"
 		AssertDisplayFields(t, gc, "misc::c_linkage_fn(int)", "misc", "misc", "")
 		AssertDisplayFields(t, gc, "misc::c_linkage_var", "misc", "misc", "")
