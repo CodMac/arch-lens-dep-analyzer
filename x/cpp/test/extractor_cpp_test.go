@@ -796,3 +796,25 @@ func TestExtractorCppAnonymousInlineNoTypeArg(t *testing.T) {
 			r.Target.QualifiedName == "Outer::Inner"
 	})
 }
+
+// TestExtractorCppIncludeSameDir 相对 include 优先命中包含文件同目录的头文件：
+// collector/cpp/base/base.cpp 的 "base.h" 应指向 collector/cpp/base/base.h，
+// 而非跨目录的 collector/c/base/base.h。
+func TestExtractorCppIncludeSameDir(t *testing.T) {
+	paths := append(
+		ResolvePaths(t, "collector/c/base", "*.c", "*.h"),
+		ResolvePaths(t, "collector/cpp/base", "*.cpp", "*.h")...,
+	)
+	_, rels := RunExtraction(t, "x/cpp/testdata", paths)
+
+	FindRel(t, rels, func(r *model.DependencyRelation) bool {
+		return r.Type == model.Import && r.Source.QualifiedName == "collector/cpp/base/base.cpp" &&
+			r.Target.QualifiedName == "collector/cpp/base/base.h"
+	})
+	for _, r := range rels {
+		if r.Type == model.Import && r.Source.QualifiedName == "collector/cpp/base/base.cpp" &&
+			r.Target.QualifiedName == "collector/c/base/base.h" {
+			t.Errorf("base.cpp 的 base.h 误命中跨目录 collector/c/base/base.h")
+		}
+	}
+}

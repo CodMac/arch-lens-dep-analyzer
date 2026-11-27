@@ -160,8 +160,8 @@ func (e *Extractor) extractHierarchy(fCtx core.FileContext, gc core.GlobalContex
 // resolveInclude 解析 #include 目标：项目内头文件 → File 元素；系统头 → 外部符号。
 func (e *Extractor) resolveInclude(gc core.GlobalContext, fCtx core.FileContext, imp *core.ImportInfo, fileIdx *fileIncludeIndex) *model.CodeElement {
 	if !imp.BoolAttr(constants.ImportAttrIsSystem) {
-		// 项目内头文件：按路径后缀匹配已收集的 File 元素（相对项目根）。
-		if target := fileIdx.lookup(imp.RawImportPath); target != nil {
+		// 项目内头文件：优先同目录，再按路径后缀匹配已收集的 File 元素（相对项目根）。
+		if target := fileIdx.lookup(imp.RawImportPath, fCtx.FilePath()); target != nil {
 			return target
 		}
 	}
@@ -192,14 +192,33 @@ func newFileIncludeIndex(gc core.GlobalContext) *fileIncludeIndex {
 }
 
 // lookup 按 include 路径后缀匹配 File 元素。
-func (idx *fileIncludeIndex) lookup(raw string) *model.CodeElement {
+// 相对 include（无目录分隔）优先命中包含文件所在目录的同名头文件，
+// 与 C/C++ 预处理器「先查包含文件所在目录」的语义一致，避免跨目录同名头文件误命中。
+func (idx *fileIncludeIndex) lookup(raw, fromFile string) *model.CodeElement {
 	if idx == nil {
 		return nil
 	}
 	raw = strings.ReplaceAll(raw, "\\", "/")
+	fromFile = strings.ReplaceAll(fromFile, "\\", "/")
 	base := raw
 	if i := strings.LastIndex(base, "/"); i >= 0 {
 		base = base[i+1:]
+	}
+	// 同目录优先。
+	if !strings.Contains(raw, "/") && fromFile != "" {
+		dir := ""
+		if i := strings.LastIndex(fromFile, "/"); i >= 0 {
+			dir = fromFile[:i]
+		}
+		want := raw
+		if dir != "" {
+			want = dir + "/" + raw
+		}
+		for _, elem := range idx.byBase[base] {
+			if strings.ReplaceAll(elem.QualifiedName, "\\", "/") == want {
+				return elem
+			}
+		}
 	}
 	suffix := "/" + raw
 	for _, elem := range idx.byBase[base] {
