@@ -89,6 +89,7 @@ C/C++ 允许在控制流语句头部声明变量，其作用域是**该语句本
 - 块编号由容器内 `#block` 计数确定性推导，与同名普通变量解耦（§2.3.1）。
 - 语句体本身若已产 `ScopeBlock`（`compound_statement`），头部声明复用同一块；`else`/`catch` 等 body-like 子节点沿用外层计数，避免块号重排。
 - Resolver 的 `scopeChain` 对「位于语句头部（条件/初始化/更新表达式）的节点」补入对应语句体块，使头部表达式中的变量读取解析到该块声明，且不会跨函数误绑同名变量。
+- 注意：此处描述的是**结构归属（CONTAIN）**。头部声明的初始化 ASSIGN、条件/自增中的 USE 等**动作关系**的 Source 归属外层函数，与结构归属刻意不同，详见 §3.4。
 
 ### 2.2.2 friend 声明
 
@@ -193,6 +194,25 @@ Collector 末尾（Step 5，全部定义注册与 namespace 汇总之后）统�
 
 - Function / Method / Lambda / ScopeBlock / Field 均可作 Source。
 - 局部 Variable **不作 Source**（其初始化表达式归属所在函数）；仅全局 Variable 可作 Source（初始化表达式归属变量自身）。
+
+### 3.4 结构归属 vs 动作归属（控制流头部声明）
+
+控制流语句头部声明的变量（`for (int i = ...)`、`if (int x = ...)`、`catch (E e)`）存在两种归属口径，二者**刻意不同**且各自正确：
+
+- **结构归属（CONTAIN）**：变量元素挂在语句体块 `block$N` 下（§2.2.1），反映其**词法作用域**是该语句。
+- **动作归属（ASSIGN/USE 等）**：头部初始化的 ASSIGN、条件/自增中的 USE，Source 取包含该动作节点的最内层**可执行元素**（§3.3）。语句体块的区间是执行体（`compound_statement`），头部 init/condition 位于其之前，故 Source 上溯到外层函数/方法。
+
+以 `for (int i = 0; i < 3; i++) { int loop_body = i; }` 为例：
+
+| 关系 | Source | 说明 |
+|---|---|---|
+| CONTAIN | `f()::block$2` → `f()::block$2::i` | 结构：`i` 的词法作用域是 for 语句 |
+| ASSIGN | `f()` → `f()::block$2::i` | 动作：for-init 由函数执行 |
+| USE | `f()` → `f()::block$2::i` | 动作：条件 `i<3` 由函数执行 |
+| CONTAIN | `f()::block$2` → `f()::block$2::loop_body` | 结构：`loop_body` 属 for 体块 |
+| ASSIGN | `f()::block$2` → `f()::block$2::loop_body` | 动作：循环体语句由 for 体块执行 |
+
+这与 Java 实现口径一致：**结构关系按词法作用域，动作关系按最内层可执行容器**。因此「变量归属 `block$N`」与「其初始化/条件动作归属函数」并不矛盾，二者描述的是不同维度。
 
 ## 4. 声明-实现链接（ImplLink）
 

@@ -114,6 +114,8 @@ Java 的默认包是真实存在的 unnamed package，不是「无归属」。�
 > （Class/Interface/Enum/Annotation）。两者都是真实语义依赖；消费方若需区分
 > 「变量/字段引用」与「类型引用」，按 `ast_kind` 或 Target 的 Kind 过滤即可。
 
+> **结构归属 vs 动作归属**：控制流头部声明的变量（`for (int i = 0; ...)`、`try (...)`）在**结构**上归属语句体块（CONTAIN），但其初始化/条件等**动作**关系的 Source 取最内层可执行容器（方法/代码块），二者刻意不同、各描述一个维度。此口径与 C/C++ 一致（见 [cpp.md](cpp.md) §3.4）。
+
 > 动作解析的三段式机制见 [action-resolution.md](../action-resolution.md)。
 
 ## 4. 语法糖支持（desugar，IsFormSugar=true）
