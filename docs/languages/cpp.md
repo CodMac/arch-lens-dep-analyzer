@@ -458,6 +458,7 @@ type expr struct {
 | **EXTEND 自环** | 模板偏特化 `struct X : X<T,...>` 产自环 | 基类 QN 与自身相同时跳过 |
 | **递归调用无 CALL** | 通用自引用守卫（源/目标 QN 相同即丢弃）误删递归调用 `fact → fact` | 自引用守卫对 `model.Call` 放行：递归是真实控制流边 |
 | **无名 struct 形参误拆** | `void f(int, struct S)` 的 `struct S` 被拆成类型 `struct` + 参数名 `S`，PARAMETER 目标变外部 `struct` 并被降噪丢弃 | `splitParam` 识别 `struct/union/class/enum + 单个标签名` 为匿名参数类型（无参数名） |
+| **匿名内联类型产垃圾 TYPE_ARG** | 匿名 struct/union 变量/字段（`struct {int m1;} s1;`）的 TYPE_ARG 目标回退成定义体原文 `{ int m1; int m2; }`（外部垃圾符号） | `extractTypeArgRels` 对匿名内联类型（qn 为空且 `isAnonymousTypeText`）直接跳过，不回退解析定义体 |
 | **PARAMETER 目标是 namespace** | 参数类型 QN 命中 namespace | `lookupTypeQN` 不再接受 Namespace |
 | **跨文件局部变量误命中** | `std::runtime_error` 的 `std` 被解析为别的文件里的局部变量 `std` | 全局短名兜底仅接受 `cpp.variable.is_global=true` 的变量与枚举常量 |
 | **跨文件同名类型/符号误命中** | 多个样例各自定义 `Color`/`Node`/`Widget`/`Holder` 时，TYPE_ARG/PARAMETER/RETURN/USE 解析到其它文件的同名 QN（审计实测 37 条） | 解析器作用域链（类型/变量/函数/成员）与 `lookupTypeQN` 增加「本文件内同作用域定义优先」；`lookupType` 非限定名先查本文件全局作用域同名条目 |

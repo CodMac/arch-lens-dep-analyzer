@@ -777,3 +777,22 @@ func TestExtractorCppRecursionCall(t *testing.T) {
 			r.Target.QualifiedName == "fact(int)"
 	})
 }
+
+// TestExtractorCppAnonymousInlineNoTypeArg 匿名内联类型（struct {..}/union {..}）
+// 无 QN，不得产出把定义体原文当目标名的 TYPE_ARG；具名内联类型仍产 TYPE_ARG。
+func TestExtractorCppAnonymousInlineNoTypeArg(t *testing.T) {
+	paths := ResolvePaths(t, "collector/c/struct", "*.c")
+	_, rels := RunExtraction(t, "x/cpp/testdata", paths)
+
+	for _, src := range []string{"s1", "s2", "MU1", "MU2", "Outer::payload"} {
+		for _, r := range rels {
+			if r.Type == model.TypeArg && r.Source.QualifiedName == src {
+				t.Errorf("%s 不应为匿名内联类型产 TYPE_ARG，got target %q", src, r.Target.QualifiedName)
+			}
+		}
+	}
+	FindRel(t, rels, func(r *model.DependencyRelation) bool {
+		return r.Type == model.TypeArg && r.Source.QualifiedName == "Outer::inner" &&
+			r.Target.QualifiedName == "Outer::Inner"
+	})
+}

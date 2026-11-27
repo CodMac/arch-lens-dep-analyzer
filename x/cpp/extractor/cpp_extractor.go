@@ -395,6 +395,11 @@ func (e *Extractor) extractTypeArgRels(fCtx core.FileContext, gc core.GlobalCont
 	if raw == "" {
 		return nil
 	}
+	// 匿名内联类型（struct {..} / union {..} / enum {..}）：无 QN，不产类型依赖，
+	// 否则回退解析会把定义体原文当成外部类型名（如 `{ int m1; int m2; }`）。
+	if qn == "" && isAnonymousTypeText(raw) {
+		return nil
+	}
 
 	target := e.lookupTypeQN(gc, fCtx, qn)
 	if target == nil {
